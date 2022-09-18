@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CreateSnapshot": {
+      "commandName": "Project",
+      "commandLineArgs": "3 Halo d:\\Tmp\\DirRaid\\R5"
+    }
+  }
+}
