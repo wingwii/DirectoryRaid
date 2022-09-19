@@ -2,7 +2,7 @@
   "profiles": {
     "CreateSnapshot": {
       "commandName": "Project",
-      "commandLineArgs": "3 Halo d:\\Tmp\\DirRaid\\R5"
+      "commandLineArgs": "3 1M Halo d:\\Tmp\\DirRaid\\R5"
     }
   }
 }

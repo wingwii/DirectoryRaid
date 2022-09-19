@@ -24,6 +24,12 @@ namespace UpdateSnapshot
             var data = File.ReadAllText(snapshotFile);
             var hdr = JsonConvert.DeserializeObject<RaidHeader>(data);
 
+            if (!hdr.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Error: invalid status.");
+                return;
+            }
+
             var partNumber = uint.Parse(args[1]);
             if (partNumber >= hdr.NumberOfPartitions)
             {
@@ -39,17 +45,23 @@ namespace UpdateSnapshot
             outputFile = Path.Combine(outputFile, snapshotID + ".l" + partNumber.ToString());
 
             var writer = File.CreateText(outputFile);
-            var s = string.Empty;
-            s += "S|0|0|";
-            s += tree.size.ToString();
-            s += "|";
-            s += tree.volumeLabel;
-            s += "|";
-            s += tree.relPath;
-            writer.WriteLine(s);
+            var storageHdr = string.Empty;
+            storageHdr += "S|0|0|";
+            storageHdr += "|";
+            storageHdr += snapshotID;
+            storageHdr += "|";
+            storageHdr += partNumber.ToString();
+            storageHdr += "|";
+            storageHdr += tree.size.ToString();
+            storageHdr += "|";
+            storageHdr += tree.volumeLabel;
+            storageHdr += "|";
+            storageHdr += tree.relPath;
+            writer.WriteLine(storageHdr);
 
             WriteDirList(writer, tree);
 
+            writer.WriteLine(storageHdr);
             writer.Flush();
             writer.Close();
         }
@@ -70,6 +82,10 @@ namespace UpdateSnapshot
             s += parentID.ToString();
             s += "|";
             s += dir.size.ToString();
+            s += "|";
+            s += dir.creationTime.ToString("X");
+            s += "|";
+            s += dir.lastWriteTime.ToString("X");
             s += "|";
             s += dir.name;
             writer.WriteLine(s);
@@ -111,10 +127,13 @@ namespace UpdateSnapshot
         {
             public string ID { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
-            public string CreationTime { get; set; } = string.Empty;
             public uint NumberOfPartitions { get; set; } = 0;
+            public long BlockSize { get; set; } = 0;
+            public string CreationTime { get; set; } = string.Empty;
             public string VolumeLabel { get; set; } = string.Empty;
             public string RelativePath { get; set; } = string.Empty;
+            public string Status { get; set; } = string.Empty;
+
 
             public override string ToString()
             {
@@ -211,7 +230,7 @@ namespace UpdateSnapshot
             {
                 fileList = Directory.GetFiles(path);
             }
-            catch (Exception) 
+            catch (Exception)
             {
                 fileList = null;
             }

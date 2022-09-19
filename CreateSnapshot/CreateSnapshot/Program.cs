@@ -8,9 +8,9 @@ namespace CreateSnapshot
     {
         static void Main(string[] args)
         {
-            if (args.Length < 3)
+            if (args.Length < 4)
             {
-                Console.WriteLine("CreateSnapshot <NumberOfPartitions> <Name> <RaidPath>");
+                Console.WriteLine("CreateSnapshot <NumberOfPartitions> <BlockSize> <Name> <RaidPath>");
                 return;
             }
 
@@ -24,7 +24,26 @@ namespace CreateSnapshot
                 return;
             }
 
-            var raidPath = args[2];
+            long blockSize = 0;
+            var s = args[1].ToLower();
+            var name = args[2];
+            var raidPath = args[3];
+
+            if (s.EndsWith("k", StringComparison.Ordinal))
+            {
+                blockSize = long.Parse(s.Substring(0, s.Length - 1));
+                blockSize *= 1024;
+            }
+            else if (s.EndsWith("m", StringComparison.Ordinal))
+            {
+                blockSize = long.Parse(s.Substring(0, s.Length - 1));
+                blockSize *= 0x100000;
+            }
+            else
+            {
+                blockSize = long.Parse(s);
+            }
+
             var label = ResolveVolumeLabel(raidPath);
             if (string.IsNullOrEmpty(label))
             {
@@ -37,10 +56,12 @@ namespace CreateSnapshot
             var hdr = new RaidHeaderS1();
             hdr.CreationTime = now.ToString("yyyy-MM-dd HH:mm:ss");
             hdr.ID = snapshotID;
-            hdr.Name = args[1];
+            hdr.Name = name;
             hdr.NumberOfPartitions = numberOfParts;
+            hdr.BlockSize = blockSize;
             hdr.VolumeLabel = label;
             hdr.RelativePath = relRaidPath;
+            hdr.Status = "Updating";
 
             var data = JsonConvert.SerializeObject(hdr, Formatting.Indented);
             var hdrFileName = Path.Combine(raidPath, snapshotID + ".hdr");
@@ -59,10 +80,12 @@ namespace CreateSnapshot
         {
             public string ID { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
-            public string CreationTime { get; set; } = string.Empty;
             public uint NumberOfPartitions { get; set; } = 0;
+            public long BlockSize { get; set; } = 0;
+            public string CreationTime { get; set; } = string.Empty;
             public string VolumeLabel { get; set; } = string.Empty;
             public string RelativePath { get; set; } = string.Empty;
+            public string Status { get; set; } = string.Empty;
 
 
             public override string ToString()
