@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "UpdateSnapshot": {
+      "commandName": "Project",
+      "commandLineArgs": "D:\\Tmp\\DirRaid\\R5\\22ff7a19.hdr 2 d:\\Tmp\\DirRaidD\\R3"
+    }
+  }
+}

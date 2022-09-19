@@ -17,6 +17,13 @@ namespace CreateSnapshot
             var now = DateTime.Now;
             var snapshotID = GenerateSnapshotID(now);
 
+            var numberOfParts = uint.Parse(args[0]);
+            if (numberOfParts > 99)
+            {
+                Console.WriteLine("Error: supports maximum 99 partitions.");
+                return;
+            }
+
             var raidPath = args[2];
             var label = ResolveVolumeLabel(raidPath);
             if (string.IsNullOrEmpty(label))
@@ -31,12 +38,12 @@ namespace CreateSnapshot
             hdr.CreationTime = now.ToString("yyyy-MM-dd HH:mm:ss");
             hdr.ID = snapshotID;
             hdr.Name = args[1];
-            hdr.NumberOfPartitions = uint.Parse(args[0]);
+            hdr.NumberOfPartitions = numberOfParts;
             hdr.VolumeLabel = label;
             hdr.RelativePath = relRaidPath;
 
             var data = JsonConvert.SerializeObject(hdr, Formatting.Indented);
-            var hdrFileName = Path.Combine(raidPath, snapshotID + ".s1");
+            var hdrFileName = Path.Combine(raidPath, snapshotID + ".hdr");
             File.WriteAllText(hdrFileName, data);
 
             try
