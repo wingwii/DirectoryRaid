@@ -19,8 +19,8 @@ namespace CommitSnapshot
             }
 
             var hdrFileName = args[0];
-            var s = File.ReadAllText(hdrFileName);
-            Header = JsonConvert.DeserializeObject<DirectoryRaid.RaidHeader>(s);
+            var hdrData = File.ReadAllText(hdrFileName);
+            Header = JsonConvert.DeserializeObject<DirectoryRaid.RaidHeader>(hdrData);
             if (!Header.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("Invalid status");
@@ -53,7 +53,10 @@ namespace CommitSnapshot
                 var rows = SplitParts(kv.Value);
                 File.WriteAllLines(fileName, rows);
             }
-            //            
+
+            Header.Status = "Committed";
+            hdrData = JsonConvert.SerializeObject(Header, Formatting.Indented);
+            File.WriteAllText(hdrFileName, hdrData);
         }
 
         private static long CalculateTotalSize(string[] rows)
@@ -121,9 +124,19 @@ namespace CommitSnapshot
                 }
 
                 var fileID = cells[1];
-                result.Add(row);
-
                 var size = long.Parse(cells[3]);
+
+                var sb = new StringBuilder();
+                sb.Append("F|");
+                sb.Append(fileID);
+                sb.Append("|");
+                sb.Append(cells[2]);
+                sb.Append("|");
+                sb.Append(size.ToString("X"));
+                sb.Append("|");
+                sb.Append(cells[6]);
+                result.Add(sb.ToString());
+
                 var offset = (long)0;
                 var blockIdx = offset;
                 while (offset < size)
@@ -150,7 +163,7 @@ namespace CommitSnapshot
                         prevRemain = blockSize - remain;
                     }
 
-                    var sb = new StringBuilder();
+                    sb = new StringBuilder();
                     sb.Append(" B|");
                     sb.Append(idIncr.ToString());
                     sb.Append("|");
