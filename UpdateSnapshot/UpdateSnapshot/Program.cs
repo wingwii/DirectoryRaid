@@ -16,13 +16,13 @@ namespace UpdateSnapshot
         {
             if (args.Length < 3)
             {
-                Console.WriteLine("UpdateSnapshot <SnapshotFile> <PartitionNumber (zero-started)> <PartitionDataPath>");
+                Console.WriteLine("UpdateSnapshot <SnapshotHeaderFile> <PartitionNumber> <PartitionDataPath>");
                 return;
             }
 
             var snapshotFile = args[0];
             var data = File.ReadAllText(snapshotFile);
-            var hdr = JsonConvert.DeserializeObject<RaidHeader>(data);
+            var hdr = JsonConvert.DeserializeObject<DirectoryRaid.RaidHeader>(data);
 
             if (!hdr.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
             {
@@ -31,7 +31,7 @@ namespace UpdateSnapshot
             }
 
             var partNumber = uint.Parse(args[1]);
-            if (partNumber >= hdr.NumberOfPartitions)
+            if (partNumber <= 0 || partNumber > hdr.NumberOfPartitions)
             {
                 Console.WriteLine("Error: invalid partition number.");
                 return;
@@ -42,7 +42,7 @@ namespace UpdateSnapshot
 
             var fi = new FileInfo(snapshotFile);
             var outputFile = fi.Directory.FullName;
-            outputFile = Path.Combine(outputFile, snapshotID + ".l" + partNumber.ToString());
+            outputFile = Path.Combine(outputFile, "list-" + partNumber.ToString() + ".txt");
 
             var writer = File.CreateText(outputFile);
             var storageHdr = string.Empty;
@@ -122,24 +122,6 @@ namespace UpdateSnapshot
             }
         }
 
-
-        private class RaidHeader
-        {
-            public string ID { get; set; } = string.Empty;
-            public string Name { get; set; } = string.Empty;
-            public uint NumberOfPartitions { get; set; } = 0;
-            public long BlockSize { get; set; } = 0;
-            public string CreationTime { get; set; } = string.Empty;
-            public string VolumeLabel { get; set; } = string.Empty;
-            public string RelativePath { get; set; } = string.Empty;
-            public string Status { get; set; } = string.Empty;
-
-
-            public override string ToString()
-            {
-                return this.Name;
-            }
-        }
 
         private static string RemoveDriveRootDir(string path)
         {

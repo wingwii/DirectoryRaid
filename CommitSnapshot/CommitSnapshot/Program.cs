@@ -24,7 +24,11 @@ namespace CommitSnapshot
             if (!Header.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("Invalid status");
+#if DEBUG
+                //
+#else
                 return;
+#endif
             }
 
             var fi = new FileInfo(hdrFileName);
@@ -33,9 +37,9 @@ namespace CommitSnapshot
             var dicFileTrees = new Dictionary<int, string[]>();
             var id = Header.ID;
             var n = Header.NumberOfPartitions;
-            for (int i = 0; i < n; ++i)
+            for (int i = 1; i <= n; ++i)
             {
-                var fileName = Path.Combine(cwd, id + ".l" + i.ToString());
+                var fileName = Path.Combine(cwd, "list-" + i.ToString() + ".txt");
                 var rows = File.ReadAllLines(fileName);
                 dicFileTrees[i] = rows;
             }
@@ -49,8 +53,8 @@ namespace CommitSnapshot
 
             foreach (var kv in dicFileTrees)
             {
-                var fileName = Path.Combine(cwd, id + ".b" + kv.Key);
-                var rows = SplitParts(kv.Value);
+                var fileName = Path.Combine(cwd, "blck-" + kv.Key + ".txt");
+                var rows = SplitParts(kv.Key, kv.Value);
                 File.WriteAllLines(fileName, rows);
             }
 
@@ -81,7 +85,7 @@ namespace CommitSnapshot
             return result;
         }
 
-        private static string[] SplitParts(string[] rows)
+        private static string[] SplitParts(int partNum, string[] rows)
         {
             var result = new List<string>();
             var storageRow = string.Empty;
@@ -105,10 +109,25 @@ namespace CommitSnapshot
             }
             result.Insert(0, storageRow);
 
-            var idIncr = (long)1;
-            var prevRemain = (long)0;
+            foreach (var row in rows)
+            {
+                var cells = row.Split('|');
+                if (cells.Length < 2)
+                {
+                    continue;
+                }
+
+                var recType = cells[0].ToUpper();
+                if (recType.Equals("F", StringComparison.Ordinal))
+                {
+                    result.Add(row);
+                }
+            }
+
+            var blockID = (long)1;
+            var blockSubID = (long)0;
             var blockSize = Header.BlockSize;
-            var totalRemain = Header.MaximumPartSize;
+            var prevRemain = blockSize;
             foreach (var row in rows)
             {
                 var cells = row.Split('|');
@@ -125,47 +144,20 @@ namespace CommitSnapshot
 
                 var fileID = cells[1];
                 var size = long.Parse(cells[3]);
-
-                var sb = new StringBuilder();
-                sb.Append("F|");
-                sb.Append(fileID);
-                sb.Append("|");
-                sb.Append(cells[2]);
-                sb.Append("|");
-                sb.Append(size.ToString("X"));
-                sb.Append("|");
-                sb.Append(cells[6]);
-                result.Add(sb.ToString());
+                result.Add(row);
 
                 var offset = (long)0;
-                var blockIdx = offset;
                 while (offset < size)
                 {
                     var remain = size - offset;
-                    var actualBlockSize = remain;
-                    if (prevRemain > 0)
-                    {
-                        if (actualBlockSize > prevRemain)
-                        {
-                            actualBlockSize = prevRemain;
-                        }
-                        prevRemain -= actualBlockSize;
-                    }
-                    else
-                    {
-                        if (actualBlockSize > blockSize)
-                        {
-                            actualBlockSize = blockSize;
-                        }
-                    }
-                    if (remain < blockSize)
-                    {
-                        prevRemain = blockSize - remain;
-                    }
+                    var actualBlockSize = (long)Math.Min(prevRemain, remain);
+                    actualBlockSize = Math.Min(actualBlockSize, blockSize);
 
-                    sb = new StringBuilder();
-                    sb.Append(" B|");
-                    sb.Append(idIncr.ToString());
+                    var sb = new StringBuilder();
+                    sb.Append("B|");
+                    sb.Append(blockID.ToString());
+                    sb.Append("|");
+                    sb.Append(blockSubID.ToString());
                     sb.Append("|");
                     sb.Append(fileID);
                     sb.Append("|");
@@ -178,8 +170,17 @@ namespace CommitSnapshot
                     sb.Append("|");
                     result.Add(sb.ToString());
 
-                    ++idIncr;
-                    ++blockIdx;
+                    ++blockSubID;
+                    if (actualBlockSize >= prevRemain)
+                    {
+                        ++blockID;
+                        blockSubID = 0;
+                        prevRemain = blockSize;
+                    }
+                    else
+                    {
+                        prevRemain -= actualBlockSize;
+                    }
                     offset += actualBlockSize;
                 }
                 //

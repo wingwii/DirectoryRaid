@@ -53,7 +53,7 @@ namespace CreateSnapshot
 
             var relRaidPath = RemoveDriveRootDir(raidPath);
 
-            var hdr = new RaidHeaderS1();
+            var hdr = new DirectoryRaid.RaidHeader();
             hdr.CreationTime = now.ToString("yyyy-MM-dd HH:mm:ss");
             hdr.ID = snapshotID;
             hdr.Name = name;
@@ -63,35 +63,23 @@ namespace CreateSnapshot
             hdr.RelativePath = relRaidPath;
             hdr.Status = "Updating";
 
-            var data = JsonConvert.SerializeObject(hdr, Formatting.Indented);
-            var hdrFileName = Path.Combine(raidPath, snapshotID + ".hdr");
-            File.WriteAllText(hdrFileName, data);
+            var outputPath = Path.Combine(raidPath, snapshotID);
+            CreateDirectorySafely(outputPath);
 
-            try
-            {
-                Directory.CreateDirectory(Path.Combine(raidPath, snapshotID));
-            }
-            catch (Exception) { }
+            var metaPath = Path.Combine(outputPath, "meta");
+            CreateDirectorySafely(metaPath);
+
+            var data = JsonConvert.SerializeObject(hdr, Formatting.Indented);
+            var hdrFileName = Path.Combine(metaPath, "header.json");
+            File.WriteAllText(hdrFileName, data);
 
             Console.WriteLine("Snapshot \"" + snapshotID + "\" was created.");
         }
 
-        private class RaidHeaderS1
+        private static void CreateDirectorySafely(string path)
         {
-            public string ID { get; set; } = string.Empty;
-            public string Name { get; set; } = string.Empty;
-            public uint NumberOfPartitions { get; set; } = 0;
-            public long BlockSize { get; set; } = 0;
-            public string CreationTime { get; set; } = string.Empty;
-            public string VolumeLabel { get; set; } = string.Empty;
-            public string RelativePath { get; set; } = string.Empty;
-            public string Status { get; set; } = string.Empty;
-
-
-            public override string ToString()
-            {
-                return this.Name;
-            }
+            try { Directory.CreateDirectory(path); }
+            catch (Exception) { }
         }
 
         private static string RemoveDriveRootDir(string path)

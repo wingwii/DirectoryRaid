@@ -2,7 +2,7 @@
   "profiles": {
     "CommitSnapshot": {
       "commandName": "Project",
-      "commandLineArgs": "D:\\Tmp\\DirRaid\\R5\\2300c9b2.hdr"
+      "commandLineArgs": "\"D:\\Tmp\\DirRaid\\R5\\23076d76\\meta\\header.json\""
     }
   }
 }
