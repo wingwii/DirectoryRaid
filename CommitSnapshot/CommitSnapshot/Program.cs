@@ -8,7 +8,11 @@ namespace CommitSnapshot
 {
     class Program
     {
-        private static DirectoryRaid.RaidHeader Header = null;
+        private static DirectoryRaid.Header _Header = null;
+        private static Dictionary<int, DirectoryRaid.StorageNode> _DicStorages = new Dictionary<int, DirectoryRaid.StorageNode>();
+        private static RaidStorage[] _RaidArray = null;
+        private static List<DirectoryRaid.RaidDataBlock> _Results = new List<DirectoryRaid.RaidDataBlock>();
+
 
         static void Main(string[] args)
         {
@@ -20,8 +24,8 @@ namespace CommitSnapshot
 
             var hdrFileName = args[0];
             var hdrData = File.ReadAllText(hdrFileName);
-            Header = JsonConvert.DeserializeObject<DirectoryRaid.RaidHeader>(hdrData);
-            if (!Header.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
+            _Header = JsonConvert.DeserializeObject<DirectoryRaid.Header>(hdrData);
+            if (!_Header.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("Invalid status");
 #if DEBUG
@@ -34,159 +38,125 @@ namespace CommitSnapshot
             var fi = new FileInfo(hdrFileName);
             var cwd = fi.Directory.FullName;
 
-            var dicFileTrees = new Dictionary<int, string[]>();
-            var id = Header.ID;
-            var n = Header.NumberOfPartitions;
+            _Header.MaximumPartSize = 0;
+            var metaParser = new DirectoryRaid.MetaStorageParser();
+            var id = _Header.ID;
+            var n = _Header.NumberOfPartitions;
             for (int i = 1; i <= n; ++i)
             {
                 var fileName = Path.Combine(cwd, "list-" + i.ToString() + ".txt");
                 var rows = File.ReadAllLines(fileName);
-                dicFileTrees[i] = rows;
+                var storage = metaParser.Parse(rows);
+                _DicStorages[i] = storage;
+
+                _Header.MaximumPartSize = (long)Math.Max(_Header.MaximumPartSize, storage.Size);
+
+                var nodes = storage.AllFileNodes;
+                Array.Sort(nodes, CmpFileNode);
             }
 
-            Header.MaximumPartSize = 0;
-            foreach (var kv in dicFileTrees)
-            {
-                var partTotalSize = CalculateTotalSize(kv.Value);
-                Header.MaximumPartSize = (long)Math.Max(Header.MaximumPartSize, partTotalSize);
-            }
+            PrepareRaidBlocks(metaParser.NewBaseID);
 
-            foreach (var kv in dicFileTrees)
-            {
-                var fileName = Path.Combine(cwd, "blck-" + kv.Key + ".txt");
-                var rows = SplitParts(kv.Key, kv.Value);
-                File.WriteAllLines(fileName, rows);
-            }
+            var export1 = new TxtFileExport(_RaidArray, _Results);
+            export1.SaveAs(Path.Combine(cwd, "blocks.txt"));
 
-            Header.Status = "Committed";
-            hdrData = JsonConvert.SerializeObject(Header, Formatting.Indented);
+            var export2 = new BinFileExport(_RaidArray, _Results);
+            export2.SaveAs(Path.Combine(cwd, "blocks.db"));
+
+            _Header.Status = "Committed";
+            hdrData = JsonConvert.SerializeObject(_Header, Formatting.Indented);
             File.WriteAllText(hdrFileName, hdrData);
         }
 
-        private static long CalculateTotalSize(string[] rows)
+        private static int CmpFileNode(DirectoryRaid.Node node1, DirectoryRaid.Node node2)
         {
-            long result = 0;
-            foreach (var row in rows)
+            var size1 = node1.Size;
+            var size2 = node2.Size;
+            if (size1 < size2)
             {
-                var cells = row.Split('|');
-                if (cells.Length < 7)
-                {
-                    continue;
-                }
-
-                var recType = cells[0].ToUpper();
-                if (!recType.Equals("F", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                result += long.Parse(cells[3]);
+                return 1;
             }
-            return result;
+            else if (size1 > size2)
+            {
+                return -1;
+            }
+            else
+            {
+                return 0;
+            }
         }
 
-        private static string[] SplitParts(int partNum, string[] rows)
+        private static void PrepareRaidBlocks(long baseObjID)
         {
-            var result = new List<string>();
-            var storageRow = string.Empty;
-            foreach (var row in rows)
+            var currentObjID = baseObjID + 1;
+
+            var blockSize = _Header.BlockSize;
+            _RaidArray = new RaidStorage[_DicStorages.Count];
+            foreach (var kv in _DicStorages)
             {
-                var cells = row.Split('|');
-                if (cells.Length < 2)
-                {
-                    continue;
-                }
-
-                var recType = cells[0].ToUpper();
-                if (recType.Equals("S", StringComparison.Ordinal))
-                {
-                    storageRow = row;
-                }
-                else if (recType.Equals("D", StringComparison.Ordinal))
-                {
-                    result.Add(row);
-                }
-            }
-            result.Insert(0, storageRow);
-
-            foreach (var row in rows)
-            {
-                var cells = row.Split('|');
-                if (cells.Length < 2)
-                {
-                    continue;
-                }
-
-                var recType = cells[0].ToUpper();
-                if (recType.Equals("F", StringComparison.Ordinal))
-                {
-                    result.Add(row);
-                }
+                var idx = kv.Key - 1;
+                var rs = new RaidStorage(blockSize, kv.Value);
+                _RaidArray[idx] = rs;
+                rs.Start();
             }
 
-            var blockID = (long)1;
-            var blockSubID = (long)0;
-            var blockSize = Header.BlockSize;
-            var prevRemain = blockSize;
-            foreach (var row in rows)
+            long currentBlockID = 1;
+            while (true)
             {
-                var cells = row.Split('|');
-                if (cells.Length < 7)
+                var blck = new DirectoryRaid.RaidDataBlock();
+                blck.ID = currentObjID;
+                blck.BlockNumber = currentBlockID;
+                blck.Size = blockSize;
+                blck.Items = new DirectoryRaid.FilePartsGroup[_RaidArray.Length];
+
+                ++currentObjID;
+
+                int raidArrIdx = 0;
+                int nonNullCount = 0;
+                foreach (var rs in _RaidArray)
                 {
-                    continue;
+                    var parts = rs.Next();
+
+                    var group = new DirectoryRaid.FilePartsGroup();
+                    blck.Items[raidArrIdx] = group;
+
+                    group.ID = currentObjID;
+                    group.Storage = rs.Storage;
+
+                    ++currentObjID;
+
+                    if (parts != null)
+                    {
+                        var partCount = parts.Length;
+                        group.Items = new DirectoryRaid.FilePart[partCount];
+                        for (int partIdx = 0; partIdx < partCount; ++partIdx)
+                        {
+                            var part = parts[partIdx];
+                            var datPart = new DirectoryRaid.FilePart();
+                            group.Items[partIdx] = datPart;
+
+                            datPart.ID = currentObjID;
+                            datPart.PartNumber = part.PartNumber;
+                            datPart.DataFile = part.DataFile;
+                            datPart.Offset = part.Offset;
+                            datPart.Size = part.Size;
+
+                            ++currentObjID;
+                        }
+                        ++nonNullCount;
+                    }
+
+                    ++raidArrIdx;
+                }
+                if (0 == nonNullCount)
+                {
+                    break;
                 }
 
-                var recType = cells[0].ToUpper();
-                if (!recType.Equals("F", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var fileID = cells[1];
-                var size = long.Parse(cells[3]);
-                result.Add(row);
-
-                var offset = (long)0;
-                while (offset < size)
-                {
-                    var remain = size - offset;
-                    var actualBlockSize = (long)Math.Min(prevRemain, remain);
-                    actualBlockSize = Math.Min(actualBlockSize, blockSize);
-
-                    var sb = new StringBuilder();
-                    sb.Append("B|");
-                    sb.Append(blockID.ToString());
-                    sb.Append("|");
-                    sb.Append(blockSubID.ToString());
-                    sb.Append("|");
-                    sb.Append(fileID);
-                    sb.Append("|");
-                    sb.Append(offset.ToString("X"));
-                    sb.Append("|");
-                    if (actualBlockSize < blockSize)
-                    {
-                        sb.Append(actualBlockSize.ToString("X"));
-                    }
-                    sb.Append("|");
-                    result.Add(sb.ToString());
-
-                    ++blockSubID;
-                    if (actualBlockSize >= prevRemain)
-                    {
-                        ++blockID;
-                        blockSubID = 0;
-                        prevRemain = blockSize;
-                    }
-                    else
-                    {
-                        prevRemain -= actualBlockSize;
-                    }
-                    offset += actualBlockSize;
-                }
-                //
+                _Results.Add(blck);
+                ++currentBlockID;
             }
-
-            return result.ToArray();
+            //
         }
 
         //
