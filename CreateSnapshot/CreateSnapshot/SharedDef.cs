@@ -4,6 +4,12 @@ using System.Text;
 
 namespace DirectoryRaid
 {
+    public class PartitionHeader
+    {
+        public string Label { get; set; } = string.Empty;
+        public string RelativePath { get; set; } = string.Empty;
+    }
+
     public class Header
     {
         public string ID { get; set; } = string.Empty;
@@ -15,6 +21,7 @@ namespace DirectoryRaid
         public string RelativePath { get; set; } = string.Empty;
         public long MaximumPartSize { get; set; } = 0;
         public string Status { get; set; } = string.Empty;
+        public PartitionHeader[] Partitions { get; set; } = null;
 
         public override string ToString()
         {
@@ -48,7 +55,6 @@ namespace DirectoryRaid
     {
         public StorageNode Storage { get; set; } = null;
         public Node ParentNode { get; set; } = null;
-        public long ParentNodeID { get; set; } = -1;
         public long CreationTime { get; set; } = 0;
         public long LastWriteTime { get; set; } = 0;
         public virtual bool IsFile { get { return true; } }
@@ -81,6 +87,7 @@ namespace DirectoryRaid
         public long ID { get; set; } = 0;
         public long BlockNumber { get; set; } = 0;
         public long Size { get; set; } = 0;
+        public long OffsetToHashData { get; set; } = -1;
         public FilePartsGroup[] Items { get; set; } = null;
     }
 

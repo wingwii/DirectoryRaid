@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "RestoreSnapshot": {
+      "commandName": "Project",
+      "commandLineArgs": "build \"D:\\Tmp\\DirRaid\\R5\\230d7a9c\\meta\\header.json\""
+    }
+  }
+}

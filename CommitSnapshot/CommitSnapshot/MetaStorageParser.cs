@@ -27,6 +27,7 @@ namespace DirectoryRaid
             StorageNode result = null;
             var lstAllFileNodes = new List<Node>();
             var dicNodes = new Dictionary<long, Node>();
+            var dicParentNodeAssoc = new Dictionary<long, long>();
             foreach (var row in rows)
             {
                 var cells = row.Split('|');
@@ -40,6 +41,7 @@ namespace DirectoryRaid
                 var isFileNode = false;
                 var nodeType = cells[0].ToUpper();
                 var nodeID = long.Parse(cells[1]);
+                var actualNodeID = nodeID + this._baseID;
                 if (nodeType.Equals("S", StringComparison.Ordinal))
                 {
                     if (result != null)
@@ -78,17 +80,18 @@ namespace DirectoryRaid
                             file = new DirectoryNode();
                         }
 
-                        file.ParentNodeID = long.Parse(cells[2]);
+                        var parentNodeID = long.Parse(cells[2]);
                         file.Size = long.Parse(cells[3]);
                         file.CreationTime = long.Parse(cells[4], System.Globalization.NumberStyles.HexNumber);
                         file.LastWriteTime = long.Parse(cells[5], System.Globalization.NumberStyles.HexNumber);
                         file.Name = cells[6];
                         node = file;
 
-                        if (file.ParentNodeID >= 0)
+                        if (parentNodeID >= 0)
                         {
-                            file.ParentNodeID += this._baseID;
+                            parentNodeID += this._baseID;
                         }
+                        dicParentNodeAssoc[actualNodeID] = parentNodeID;
 
                         isFileNode = true;
                     }
@@ -97,7 +100,7 @@ namespace DirectoryRaid
                 if (node != null)
                 {
                     node.NodeType = nodeType;
-                    node.ID = nodeID + this._baseID;
+                    node.ID = actualNodeID;
                     dicNodes[node.ID] = node;
                     this._newBaseID = (long)Math.Max(this._newBaseID, node.ID);
 
@@ -113,7 +116,7 @@ namespace DirectoryRaid
                     }
                 }
             }
-            
+
             if (null == result)
             {
                 return null;
@@ -129,8 +132,9 @@ namespace DirectoryRaid
                     continue;
                 }
 
+                long parentNodeID = dicParentNodeAssoc[nodeID];
                 Node parentNode = null;
-                if (!dicNodes.TryGetValue(node.ParentNodeID, out parentNode))
+                if (!dicNodes.TryGetValue(parentNodeID, out parentNode))
                 {
                     parentNode = null;
                 }

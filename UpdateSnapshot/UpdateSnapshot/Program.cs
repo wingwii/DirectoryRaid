@@ -20,9 +20,9 @@ namespace UpdateSnapshot
                 return;
             }
 
-            var snapshotFile = args[0];
-            var data = File.ReadAllText(snapshotFile);
-            var hdr = JsonConvert.DeserializeObject<DirectoryRaid.RaidHeader>(data);
+            var snapshotHdrFile = args[0];
+            var data = File.ReadAllText(snapshotHdrFile);
+            var hdr = JsonConvert.DeserializeObject<DirectoryRaid.Header>(data);
 
             if (!hdr.Status.Equals("updating", StringComparison.OrdinalIgnoreCase))
             {
@@ -37,10 +37,19 @@ namespace UpdateSnapshot
                 return;
             }
 
+            var partitionRootDir = args[2];
             var snapshotID = hdr.ID;
-            var tree = BuildDataDirTree(args[2]);
+            var tree = BuildDataDirTree(Path.Combine(partitionRootDir, "data"));
 
-            var fi = new FileInfo(snapshotFile);
+            var partitionHdr = new DirectoryRaid.PartitionHeader();
+            partitionHdr.Label = tree.volumeLabel;
+            partitionHdr.RelativePath = RemoveDriveRootDir(partitionRootDir);
+            hdr.Partitions[partNumber - 1] = partitionHdr;
+
+            data = JsonConvert.SerializeObject(hdr, Formatting.Indented);
+            File.WriteAllText(snapshotHdrFile, data);
+
+            var fi = new FileInfo(snapshotHdrFile);
             var outputFile = fi.Directory.FullName;
             outputFile = Path.Combine(outputFile, "list-" + partNumber.ToString() + ".txt");
 

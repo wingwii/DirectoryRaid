@@ -47,7 +47,7 @@ namespace CommitSnapshot
 
                     writer.Write((byte)nodeType);
                     this.WriteID(file.ID);
-                    this.WriteID(file.ParentNodeID);
+                    this.WriteID(GetParentNodeID(file));
                     this.WriteID(file.Storage.ID);
                     writer.Write((UInt64)file.Size);
                     writer.Write((Int64)file.CreationTime);
@@ -63,6 +63,12 @@ namespace CommitSnapshot
                 writer.Write((Int32)block.BlockNumber);
                 writer.Write((UInt32)block.Size);
 
+                // SHA-256
+                writer.Write((Int64)0);
+                writer.Write((Int64)0);
+                writer.Write((Int64)0);
+                writer.Write((Int64)0);
+                
                 foreach (var group in block.Items)
                 {
                     if (null == group)
@@ -86,12 +92,6 @@ namespace CommitSnapshot
                             writer.Write((UInt32)part.PartNumber);
                             writer.Write((UInt32)part.Offset);
                             writer.Write((UInt32)part.Size);
-
-                            // SHA-256
-                            writer.Write((Int64)0);
-                            writer.Write((Int64)0);
-                            writer.Write((Int64)0);
-                            writer.Write((Int64)0);
                         }
                     }
                 }
@@ -103,6 +103,19 @@ namespace CommitSnapshot
             writer.Close();
             fs.Dispose();
             writer.Dispose();
+        }
+
+        public static long GetParentNodeID(DirectoryRaid.FileNode node)
+        {
+            var parentNode = node.ParentNode;
+            if (null == parentNode)
+            {
+                return -1;
+            }
+            else
+            {
+                return parentNode.ID;
+            }
         }
 
         private void WriteID(long id)

@@ -53,7 +53,7 @@ namespace CreateSnapshot
 
             var relRaidPath = RemoveDriveRootDir(raidPath);
 
-            var hdr = new DirectoryRaid.RaidHeader();
+            var hdr = new DirectoryRaid.Header();
             hdr.CreationTime = now.ToString("yyyy-MM-dd HH:mm:ss");
             hdr.ID = snapshotID;
             hdr.Name = name;
@@ -62,6 +62,8 @@ namespace CreateSnapshot
             hdr.VolumeLabel = label;
             hdr.RelativePath = relRaidPath;
             hdr.Status = "Updating";
+
+            hdr.Partitions = new DirectoryRaid.PartitionHeader[numberOfParts];
 
             var outputPath = Path.Combine(raidPath, snapshotID);
             CreateDirectorySafely(outputPath);

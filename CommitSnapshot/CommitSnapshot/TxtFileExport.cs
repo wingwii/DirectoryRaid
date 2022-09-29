@@ -123,7 +123,7 @@ namespace CommitSnapshot
             sb.Append('|');
             sb.Append(node.ID.ToString("x"));
             sb.Append('|');
-            sb.Append(node.ParentNodeID.ToString("x"));
+            sb.Append(BinFileExport.GetParentNodeID(node).ToString("x"));
             sb.Append('|');
             sb.Append(node.Storage.ID.ToString("x"));
             sb.Append('|');
