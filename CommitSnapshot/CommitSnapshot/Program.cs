@@ -88,10 +88,11 @@ namespace CommitSnapshot
 
         private static void PrepareRaidBlocks(long baseObjID)
         {
-            var currentObjID = baseObjID + 1;
+            var refCurrentObjID = new RaidStorage.RefInt64();
+            refCurrentObjID.value = baseObjID + 1;
 
             var blockSize = _Header.BlockSize;
-            _RaidArray = new RaidStorage[_DicStorages.Count];
+            _RaidArray = new RaidStorage[_DicStorages.Count + 1];
             foreach (var kv in _DicStorages)
             {
                 var idx = kv.Key - 1;
@@ -100,16 +101,22 @@ namespace CommitSnapshot
                 rs.Start();
             }
 
+            var rs0 = new RaidStorage(blockSize, null);
+            _RaidArray[_DicStorages.Count] = rs0;
+            rs0.RaidHeader = _Header;
+            rs0.RefCurrentObjID = refCurrentObjID;
+            rs0.Start();
+
             long currentBlockID = 1;
             while (true)
             {
                 var blck = new DirectoryRaid.RaidDataBlock();
-                blck.ID = currentObjID;
+                blck.ID = refCurrentObjID.value;
                 blck.BlockNumber = currentBlockID;
                 blck.Size = blockSize;
                 blck.Items = new DirectoryRaid.FilePartsGroup[_RaidArray.Length];
 
-                ++currentObjID;
+                ++refCurrentObjID.value;
 
                 int raidArrIdx = 0;
                 int nonNullCount = 0;
@@ -120,10 +127,10 @@ namespace CommitSnapshot
                     var group = new DirectoryRaid.FilePartsGroup();
                     blck.Items[raidArrIdx] = group;
 
-                    group.ID = currentObjID;
+                    group.ID = refCurrentObjID.value;
                     group.Storage = rs.Storage;
 
-                    ++currentObjID;
+                    ++refCurrentObjID.value;
 
                     if (parts != null)
                     {
@@ -135,15 +142,19 @@ namespace CommitSnapshot
                             var datPart = new DirectoryRaid.FilePart();
                             group.Items[partIdx] = datPart;
 
-                            datPart.ID = currentObjID;
+                            datPart.ID = refCurrentObjID.value;
                             datPart.PartNumber = part.PartNumber;
                             datPart.DataFile = part.DataFile;
                             datPart.Offset = part.Offset;
                             datPart.Size = part.Size;
 
-                            ++currentObjID;
+                            ++refCurrentObjID.value;
                         }
-                        ++nonNullCount;
+
+                        if (rs != rs0)
+                        {
+                            ++nonNullCount;
+                        }
                     }
 
                     ++raidArrIdx;
@@ -156,7 +167,8 @@ namespace CommitSnapshot
                 _Results.Add(blck);
                 ++currentBlockID;
             }
-            //
+
+            rs0.CommitVirtualStorage();
         }
 
         //

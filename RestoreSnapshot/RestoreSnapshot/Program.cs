@@ -15,7 +15,7 @@ namespace RestoreSnapshot
             {
                 Console.WriteLine("restore <mode> <DbPath>");
                 Console.WriteLine("  Modes:");
-                Console.WriteLine("    Label: show all storage headers");
+                Console.WriteLine("    Build");
                 return;
             }
 
@@ -35,7 +35,7 @@ namespace RestoreSnapshot
             {
 
             }
-
+            //
         }
 
 

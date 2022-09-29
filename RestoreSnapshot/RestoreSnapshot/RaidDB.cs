@@ -13,6 +13,7 @@ namespace RestoreSnapshot
         private Dictionary<long, DataBlockWrp> _dicDataBlocks = new Dictionary<long, DataBlockWrp>();
         private Dictionary<long, FilePartsGroupWrp> _dicFilePartsGroups = new Dictionary<long, FilePartsGroupWrp>();
         private Dictionary<long, FilePartWrp> _dicFileParts = new Dictionary<long, FilePartWrp>();
+        private long _maxDbObjID = -1;
 
         private DirectoryRaid.StorageNode[] _storages = null;
         private DirectoryRaid.RaidDataBlock[] _dataBlocks = null;
@@ -50,12 +51,14 @@ namespace RestoreSnapshot
             this._dicFilePartsGroups.Clear();
             this._dicFileParts.Clear();
 
+            long maxObjID = -1;
             var fs = File.OpenRead(fileName);
             var reader = new BinaryReader(fs);
             while (fs.Position < fs.Length)
             {
                 var nodeType = (uint)reader.ReadByte();
                 var nodeID = ReadID(reader);
+                maxObjID = (long)Math.Max(maxObjID, nodeID);
                 if (1 == nodeType)
                 {
                     var storage = new DirectoryRaid.StorageNode();
@@ -154,6 +157,7 @@ namespace RestoreSnapshot
             reader.Close();
             fs.Close();
 
+            this._maxDbObjID = maxObjID + 1;
             if (result)
             {
                 result = false;
@@ -289,7 +293,11 @@ namespace RestoreSnapshot
             {
                 var blckWrp = kv.Value;
                 var blck = blckWrp.target;
-                blck.Items = blckWrp.lstGrp.ToArray();
+                var lstGrp = blckWrp.lstGrp;
+
+
+
+                blck.Items = lstGrp.ToArray();
                 this._dataBlocks[i++] = blck;
             }
 
