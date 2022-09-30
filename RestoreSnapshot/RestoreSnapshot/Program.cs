@@ -29,15 +29,20 @@ namespace RestoreSnapshot
             var cwd = fi.Directory.FullName;
 
             _DB = new RaidDB();
-            _DB.Load(Path.Combine(cwd, "blocks.db"));
+            _DB.RaidHeader = _Header;
+            _DB.FileName = Path.Combine(cwd, "blocks.db");
+            _DB.Load();
 
             if (mode.Equals("build", StringComparison.Ordinal))
             {
-
+                var builder = new Builder(_DB);
+                builder.Build(_Header.NumberOfPartitions + 1);
             }
-            //
-        }
 
+#if DEBUG
+            //Console.ReadKey();
+#endif
+        }
 
     }
 }

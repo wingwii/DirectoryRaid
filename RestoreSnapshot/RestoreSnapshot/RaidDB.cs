@@ -24,7 +24,8 @@ namespace RestoreSnapshot
             //
         }
 
-        public string DbFileName { get; private set; } = string.Empty;
+        public DirectoryRaid.Header RaidHeader { get; set; } = null;
+        public string FileName { get; set; } = string.Empty;
 
         public DirectoryRaid.StorageNode[] Storages
         {
@@ -36,11 +37,10 @@ namespace RestoreSnapshot
             get { return this._dataBlocks; }
         }
 
-        public bool Load(string fileName)
+        public bool Load()
         {
             var result = true;
-
-            this.DbFileName = fileName;
+            var fileName = this.FileName;
 
             this._storages = null;
             this._dataBlocks = null;
@@ -246,6 +246,11 @@ namespace RestoreSnapshot
                 var file = fileWrp.target;
                 var parentNodeID = fileWrp.parentNodeID;
 
+                {
+                    var storageWrp = this._dicStorages[fileWrp.storageID];
+                    file.Storage = storageWrp.target;
+                }
+
                 FileNodeWrp parentDirWrp = null;
                 if (this._dicFiles.TryGetValue(parentNodeID, out parentDirWrp))
                 {
@@ -262,6 +267,7 @@ namespace RestoreSnapshot
                         storage.RootDirectory = file;
                     }
                 }
+
             }
 
             foreach (var kv in this._dicFileParts)
@@ -294,8 +300,6 @@ namespace RestoreSnapshot
                 var blckWrp = kv.Value;
                 var blck = blckWrp.target;
                 var lstGrp = blckWrp.lstGrp;
-
-
 
                 blck.Items = lstGrp.ToArray();
                 this._dataBlocks[i++] = blck;
