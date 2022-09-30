@@ -16,10 +16,11 @@ namespace RestoreSnapshot
                 Console.WriteLine("restore <mode> <DbPath>");
                 Console.WriteLine("  Modes:");
                 Console.WriteLine("    Build");
+                Console.WriteLine("    Restore-<StorageNumber>");
                 return;
             }
 
-            var mode = args[0].ToLower();
+            var mode = args[0];
             var hdrFileName = args[1];
 
             var hdrData = File.ReadAllText(hdrFileName);
@@ -33,10 +34,17 @@ namespace RestoreSnapshot
             _DB.FileName = Path.Combine(cwd, "blocks.db");
             _DB.Load();
 
-            if (mode.Equals("build", StringComparison.Ordinal))
+            if (mode.Equals("build", StringComparison.OrdinalIgnoreCase))
             {
                 var builder = new Builder(_DB);
-                builder.Build(_Header.NumberOfPartitions + 1);
+                builder.Build(_Header.NumberOfPartitions + 1, true);
+            }
+            else if (mode.IndexOf("restore-", 0, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                var s = mode.Substring(8);
+                var storageNum = uint.Parse(s);
+                var builder = new Builder(_DB);
+                builder.Build(storageNum, false);
             }
 
 #if DEBUG

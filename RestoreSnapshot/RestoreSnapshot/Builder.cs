@@ -28,7 +28,7 @@ namespace RestoreSnapshot
             this._db = db;
         }
 
-        public bool Build(uint storageNumber)
+        public bool Build(uint storageNumber, bool checkDstDirExisted)
         {
             this._dstStorageNumber = storageNumber;
             this._dstStorageIdx = this.FindStorageIndex(storageNumber);
@@ -45,9 +45,12 @@ namespace RestoreSnapshot
             {
                 return false;
             }
-            if (!this._arActualStorageChecking[this._dstStorageIdx])
+            if (checkDstDirExisted)
             {
-                return false;
+                if (!this._arActualStorageChecking[this._dstStorageIdx])
+                {
+                    return false;
+                }
             }
 
             this.PrepareBuilderStatusFileName();
@@ -65,6 +68,30 @@ namespace RestoreSnapshot
             }
 
             return true;
+        }
+
+        private static void PrepareDir(string fileName)
+        {
+            var stack = new Stack<string>();
+            var fi = new FileInfo(fileName);
+            var path = fi.Directory.FullName;
+            while (true)
+            {
+                var di = new DirectoryInfo(path);
+                stack.Push(path);
+                var parent = di.Parent;
+                if (null == parent)
+                {
+                    break;
+                }
+                path = parent.FullName;
+            }
+            while (stack.Count > 0)
+            {
+                path = stack.Pop();
+                try { Directory.CreateDirectory(path); }
+                catch (Exception) { }
+            }
         }
 
         private void SaveRaidBlock(DirectoryRaid.RaidDataBlock block)
@@ -88,6 +115,7 @@ namespace RestoreSnapshot
                     FileStream fs = null;
                     try
                     {
+                        PrepareDir(fileName);
                         fs = File.OpenWrite(fileName);
                         fs.Position = part.Offset;
                         fs.Write(buf, (int)offset, (int)partSize);
@@ -279,13 +307,12 @@ namespace RestoreSnapshot
             for (int i = 0; i < n; ++i)
             {
                 this._arWorkerReaderBlockIdx[i] = -1;
-                this._arWorkerBuf[i] = null;
+                this._arWorkerBuf[i] = new byte[blockSize];
 
                 if (!this._arActualStorageChecking[i])
                 {
                     continue;
                 }
-                this._arWorkerBuf[i] = new byte[blockSize];
 
                 if (i == this._dstStorageIdx)
                 {
