@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -17,6 +18,8 @@ namespace RestoreSnapshot
         private string _dstStoragePath = string.Empty;
         private string[] _arActualStorageRootPaths = null;
         private bool[] _arActualStorageChecking = null;
+        private int _builderStatusRecordLen = 0;
+        private BuilderStatusRecord[] _arBuilderStatus = null;
         private string _builderStatusFileName = null;
         private int[] _arWorkerReaderBlockIdx = null;
         private byte[][] _arWorkerBuf = null;
@@ -28,7 +31,9 @@ namespace RestoreSnapshot
             this._db = db;
         }
 
-        public bool Build(uint storageNumber, bool checkDstDirExisted)
+        public bool IsRestorationMode { get; set; } = false;
+
+        public bool Build(uint storageNumber)
         {
             this._dstStorageNumber = storageNumber;
             this._dstStorageIdx = this.FindStorageIndex(storageNumber);
@@ -45,7 +50,7 @@ namespace RestoreSnapshot
             {
                 return false;
             }
-            if (checkDstDirExisted)
+            if (!this.IsRestorationMode)
             {
                 if (!this._arActualStorageChecking[this._dstStorageIdx])
                 {
@@ -53,21 +58,176 @@ namespace RestoreSnapshot
                 }
             }
 
+            this._builderStatusRecordLen = 16 + (48 * this._db.Storages.Length);
+
             this.PrepareBuilderStatusFileName();
-
             this.PrepareWorkerThreads();
+            this.LoadBuilderStatusFile();
 
-            var dataBlocks = this._db.DataBlocks;
-            var n = dataBlocks.Length;
-            for (int i = 0; i < n; ++i)
+            if (this._workerCount > 1)
             {
-                this.WakeAllReaders(i);
-                this.WaitForAllReaders();
-                this.ComputeCurrentRaidBlock();
-                this.SaveRaidBlock(dataBlocks[i]);
+                var dataBlocks = this._db.DataBlocks;
+                var n = dataBlocks.Length;
+                for (int i = 0; i < n; ++i)
+                {
+                    Console.Title = "Building " + i.ToString() + " of " + n.ToString();
+
+                    if (!this.IsFullBlock(i))
+                    {
+                        this.WakeAllReaders(i);
+                        this.WaitForAllReaders();
+                        this.ComputeCurrentRaidBlock();
+                        this.SaveRaidBlock(dataBlocks[i]);
+                        this.SaveBuilderStatus(i);
+                    }
+                }
             }
 
             return true;
+        }
+
+        private bool IsFullBlock(int idx)
+        {
+            var bs = this._arBuilderStatus[idx];
+            if (null == bs)
+            {
+                return false;
+            }
+            foreach (var hashStr in bs.arHashStr)
+            {
+                if (string.IsNullOrEmpty(hashStr))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private class BuilderStatusRecord
+        {
+            public string[] arHashStr = null;
+        }
+
+        private void LoadBuilderStatusFile()
+        {
+            var n = this._db.DataBlocks.Length;
+            this._arBuilderStatus = new BuilderStatusRecord[n];
+            for (int i = 0; i < n; ++i)
+            {
+                this._arBuilderStatus[i] = null;
+            }
+
+            if (!File.Exists(this._builderStatusFileName))
+            {
+                return;
+            }
+
+            int recIdx = 0;
+            var recLen = this._builderStatusRecordLen;
+            var buf = new byte[recLen];
+            var storageCount = this._db.Storages.Length;
+            var fs = File.OpenRead(this._builderStatusFileName);
+            while (fs.Position < fs.Length)
+            {
+                var nRead = fs.Read(buf, 0, recLen);
+                if (nRead < recLen)
+                {
+                    break;
+                }
+
+                var s = Encoding.ASCII.GetString(buf);
+
+                var rec = new BuilderStatusRecord();
+                this._arBuilderStatus[recIdx] = rec;
+
+                var arHashStr = new string[storageCount];
+                rec.arHashStr = arHashStr;
+
+                var s2 = s.Substring(14);
+                for (int j = 0; j < storageCount; ++j)
+                {
+                    var hashStr = s2.Substring(4, 44).Trim();
+                    s2 = s2.Substring(48);
+                    if (hashStr.Equals("*", StringComparison.Ordinal))
+                    {
+                        hashStr = null;
+                    }
+                    arHashStr[j] = hashStr;
+                }
+
+                ++recIdx;
+            }
+            fs.Close();
+            fs.Dispose();
+        }
+
+        private static string ToHexString(byte[] buf)
+        {
+            var sb = new StringBuilder();
+            foreach (var b in buf)
+            {
+                sb.Append(string.Format("{0:X2}", (uint)b));
+            }
+            return sb.ToString();
+        }
+
+        private static byte[] CheckSumStorageBlock(byte[] buf)
+        {
+            byte[] result = null;
+            using (var hashFunc = SHA256.Create())
+            {
+                result = hashFunc.ComputeHash(buf);
+            }
+            return result;
+        }
+
+        private void SaveBuilderStatus(int idx)
+        {
+            var storageCount = this._arWorkerBuf.Length;
+            long recordLen = this._builderStatusRecordLen;
+
+            var sb = new StringBuilder();
+            sb.Append(string.Format("{0:X8}", idx));
+            sb.Append('|');
+            sb.Append(storageCount.ToString().PadRight(2, ' '));
+            sb.Append('|');
+            sb.Append(this._dstStorageIdx.ToString().PadRight(2, ' '));
+
+            var bs = this._arBuilderStatus[idx];
+            for (int i = 0; i < storageCount; ++i)
+            {
+                sb.Append("\r\n  ");
+                string hashStr = null;
+                if (bs != null)
+                {
+                    hashStr = bs.arHashStr[i];
+                }
+                if (null == hashStr || i == this._dstStorageIdx)
+                {
+                    var x = this._arActualStorageChecking[i];
+                    if (x)
+                    {
+                        var hash = CheckSumStorageBlock(this._arWorkerBuf[i]);
+                        hashStr = Convert.ToBase64String(hash);
+                    }
+                    else
+                    {
+                        hashStr = "*";
+                    }
+                }
+                sb.Append(hashStr.PadRight(44, ' '));
+            }
+            sb.Append("\r\n");
+
+            var s = sb.ToString();
+            var buf2 = Encoding.ASCII.GetBytes(s);
+
+            var fs = File.OpenWrite(this._builderStatusFileName);
+            fs.Position = idx * recordLen;
+            fs.Write(buf2, 0, buf2.Length);
+            fs.Flush();
+            fs.Close();
+            fs.Dispose();
         }
 
         private static void PrepareDir(string fileName)
@@ -110,8 +270,10 @@ namespace RestoreSnapshot
                 {
                     var partSize = part.Size;
                     var fileName = this.PrepareActualFilePath(this._dstStorageIdx, part.DataFile);
-                    Console.WriteLine(fileName);
-                    
+
+                    var s = "[" + part.Offset.ToString("X") + "] " + fileName;
+                    Console.WriteLine(s);
+
                     FileStream fs = null;
                     try
                     {
@@ -138,8 +300,6 @@ namespace RestoreSnapshot
         {
             var buf = this._arWorkerBuf[this._dstStorageIdx];
             var blockSize = buf.Length;
-            ZeroBuf(buf, 0, blockSize);
-
             foreach (var buf2 in this._arWorkerBuf)
             {
                 if (null == buf2 || buf2 == buf)
@@ -156,6 +316,11 @@ namespace RestoreSnapshot
         private void PrepareBuilderStatusFileName()
         {
             var fileName = this._dstStoragePath;
+            if (this.IsRestorationMode)
+            {
+                var di = new DirectoryInfo(fileName);
+                fileName = di.Parent.FullName;
+            }
             fileName = Path.Combine(fileName, "meta");
             try { Directory.CreateDirectory(fileName); }
             catch (Exception) { }
@@ -164,12 +329,29 @@ namespace RestoreSnapshot
 
         private void WakeAllReaders(int blockIdx)
         {
+            this._workerReport = this._workerCount;
             var n = this._arWorkerReaderBlockIdx.Length;
             for (int i = 0; i < n; ++i)
             {
+                if (i != this._dstStorageIdx)
+                {
+                    var workerActivated = this._arActualStorageChecking[i];
+                    if (workerActivated)
+                    {
+                        var bs = this._arBuilderStatus[blockIdx];
+                        if (bs != null)
+                        {
+                            if (!string.IsNullOrEmpty(bs.arHashStr[i]))
+                            {
+                                --this._workerReport;
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 this._arWorkerReaderBlockIdx[i] = blockIdx;
             }
-            this._workerReport = this._workerCount;
         }
 
         private void WaitForAllReaders()
@@ -306,15 +488,13 @@ namespace RestoreSnapshot
             this._arWorkerBuf = new byte[n][];
             for (int i = 0; i < n; ++i)
             {
+                var buf = new byte[blockSize];
+                ZeroBuf(buf, 0, buf.Length);
+
                 this._arWorkerReaderBlockIdx[i] = -1;
-                this._arWorkerBuf[i] = new byte[blockSize];
+                this._arWorkerBuf[i] = buf;
 
                 if (!this._arActualStorageChecking[i])
-                {
-                    continue;
-                }
-
-                if (i == this._dstStorageIdx)
                 {
                     continue;
                 }

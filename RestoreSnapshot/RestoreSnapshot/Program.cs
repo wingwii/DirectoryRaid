@@ -37,14 +37,15 @@ namespace RestoreSnapshot
             if (mode.Equals("build", StringComparison.OrdinalIgnoreCase))
             {
                 var builder = new Builder(_DB);
-                builder.Build(_Header.NumberOfPartitions + 1, true);
+                builder.Build(_Header.NumberOfPartitions + 1);
             }
             else if (mode.IndexOf("restore-", 0, StringComparison.OrdinalIgnoreCase) == 0)
             {
                 var s = mode.Substring(8);
                 var storageNum = uint.Parse(s);
                 var builder = new Builder(_DB);
-                builder.Build(storageNum, false);
+                builder.IsRestorationMode = true;
+                builder.Build(storageNum);
             }
 
 #if DEBUG
