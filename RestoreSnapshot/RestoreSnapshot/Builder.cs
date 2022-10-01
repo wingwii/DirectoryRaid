@@ -216,6 +216,10 @@ namespace RestoreSnapshot
                     }
                 }
                 sb.Append(hashStr.PadRight(44, ' '));
+                if (bs != null)
+                {
+                    bs.arHashStr[i] = hashStr;
+                }
             }
             sb.Append("\r\n");
 
@@ -333,6 +337,9 @@ namespace RestoreSnapshot
             var n = this._arWorkerReaderBlockIdx.Length;
             for (int i = 0; i < n; ++i)
             {
+                var buf = this._arWorkerBuf[i];
+                ZeroBuf(buf, 0, buf.Length);
+
                 if (i != this._dstStorageIdx)
                 {
                     var workerActivated = this._arActualStorageChecking[i];
@@ -422,7 +429,7 @@ namespace RestoreSnapshot
 
             long offset = 0;
             var buf = this._arWorkerBuf[readerIdx];
-            ZeroBuf(buf, 0, buf.Length);
+            //ZeroBuf(buf, 0, buf.Length);
 
             var fileParts = filePartGrp.Items;
             foreach (var part in fileParts)
