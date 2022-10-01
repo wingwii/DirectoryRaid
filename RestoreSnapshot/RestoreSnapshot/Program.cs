@@ -13,7 +13,7 @@ namespace RestoreSnapshot
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("restore <mode> <DbPath>");
+                Console.WriteLine("restore <mode> <HeaderFile>");
                 Console.WriteLine("  Modes:");
                 Console.WriteLine("    Build");
                 Console.WriteLine("    Restore-<StorageNumber>");
