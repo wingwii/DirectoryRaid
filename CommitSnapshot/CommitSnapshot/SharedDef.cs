@@ -80,6 +80,8 @@ namespace DirectoryRaid
         public long ID { get; set; } = 0;
         public StorageNode Storage { get; set; } = null;
         public FilePart[] Items { get; set; } = null;
+        public long OffsetToDataHash { get; set; } = 0;
+        public byte[] DataHash { get; set; } = null;
     }
 
     public class RaidDataBlock
@@ -87,7 +89,6 @@ namespace DirectoryRaid
         public long ID { get; set; } = 0;
         public long BlockNumber { get; set; } = 0;
         public long Size { get; set; } = 0;
-        public long OffsetToHashData { get; set; } = -1;
         public FilePartsGroup[] Items { get; set; } = null;
     }
 

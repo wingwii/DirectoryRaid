@@ -66,19 +66,37 @@ namespace RestoreSnapshot
 
             if (this._workerCount > 1)
             {
+                int nFullBlock = 0;
                 var dataBlocks = this._db.DataBlocks;
                 var n = dataBlocks.Length;
                 for (int i = 0; i < n; ++i)
                 {
                     Console.Title = "Building " + i.ToString() + " of " + n.ToString();
 
-                    if (!this.IsFullBlock(i))
+                    if (this.IsFullBlock(i))
+                    {
+                        ++nFullBlock;
+                    }
+                    else
                     {
                         this.WakeAllReaders(i);
                         this.WaitForAllReaders();
                         this.ComputeCurrentRaidBlock();
                         this.SaveRaidBlock(dataBlocks[i]);
                         this.SaveBuilderStatus(i);
+
+                        if (this.IsFullBlock(i))
+                        {
+                            ++nFullBlock;
+                        }
+                    }
+                }
+
+                if (nFullBlock == n)
+                {
+                    if (!this.IsRestorationMode)
+                    {
+                        this._db.RaidHeader.Status = "Backup";
                     }
                 }
             }
@@ -96,6 +114,10 @@ namespace RestoreSnapshot
             foreach (var hashStr in bs.arHashStr)
             {
                 if (string.IsNullOrEmpty(hashStr))
+                {
+                    return false;
+                }
+                if (hashStr.Equals("*", StringComparison.Ordinal))
                 {
                     return false;
                 }
@@ -161,16 +183,6 @@ namespace RestoreSnapshot
             fs.Dispose();
         }
 
-        private static string ToHexString(byte[] buf)
-        {
-            var sb = new StringBuilder();
-            foreach (var b in buf)
-            {
-                sb.Append(string.Format("{0:X2}", (uint)b));
-            }
-            return sb.ToString();
-        }
-
         private static byte[] CheckSumStorageBlock(byte[] buf)
         {
             byte[] result = null;
@@ -194,6 +206,17 @@ namespace RestoreSnapshot
             sb.Append(this._dstStorageIdx.ToString().PadRight(2, ' '));
 
             var bs = this._arBuilderStatus[idx];
+            if (null == bs)
+            {
+                bs = new BuilderStatusRecord();
+                bs.arHashStr = new string[storageCount];
+                for (int i = 0; i < storageCount; ++i)
+                {
+                    bs.arHashStr[i] = null;
+                }
+                this._arBuilderStatus[idx] = bs;
+            }
+
             for (int i = 0; i < storageCount; ++i)
             {
                 sb.Append("\r\n  ");
@@ -216,10 +239,7 @@ namespace RestoreSnapshot
                     }
                 }
                 sb.Append(hashStr.PadRight(44, ' '));
-                if (bs != null)
-                {
-                    bs.arHashStr[i] = hashStr;
-                }
+                bs.arHashStr[i] = hashStr;
             }
             sb.Append("\r\n");
 

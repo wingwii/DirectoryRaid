@@ -110,9 +110,6 @@ namespace RestoreSnapshot
                     block.BlockNumber = reader.ReadInt32();
                     block.Size = (long)reader.ReadUInt32();
 
-                    block.OffsetToHashData = fs.Position;
-                    fs.Position += 32;
-
                     var wrp = new DataBlockWrp();
                     wrp.target = block;
                     this._dicDataBlocks[nodeID] = wrp;
@@ -124,6 +121,14 @@ namespace RestoreSnapshot
 
                     var blockID = ReadID(reader);
                     var storageNumber = (int)reader.ReadUInt16();
+
+                    grp.OffsetToDataHash = fs.Position;
+                    var hashExisted = reader.ReadByte();
+                    grp.DataHash = reader.ReadBytes(32);
+                    if (0 == hashExisted)
+                    {
+                        grp.DataHash = null;
+                    }
 
                     var wrp = new FilePartsGroupWrp();
                     wrp.target = grp;

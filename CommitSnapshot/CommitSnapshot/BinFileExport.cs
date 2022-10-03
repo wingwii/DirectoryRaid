@@ -63,23 +63,19 @@ namespace CommitSnapshot
                 writer.Write((Int32)block.BlockNumber);
                 writer.Write((UInt32)block.Size);
 
-                // SHA-256
-                writer.Write((Int64)0);
-                writer.Write((Int64)0);
-                writer.Write((Int64)0);
-                writer.Write((Int64)0);
-                
                 foreach (var group in block.Items)
                 {
-                    if (null == group)
-                    {
-                        continue;
-                    }
-
                     writer.Write((byte)17);
                     this.WriteID(group.ID);
                     this.WriteID(block.ID);
                     writer.Write((UInt16)group.Storage.StorageNumber);
+
+                    // SHA-256
+                    writer.Write((byte)0);
+                    writer.Write((Int64)0);
+                    writer.Write((Int64)0);
+                    writer.Write((Int64)0);
+                    writer.Write((Int64)0);
 
                     if (null != group.Items)
                     {
