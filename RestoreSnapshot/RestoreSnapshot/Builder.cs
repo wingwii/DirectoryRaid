@@ -97,11 +97,58 @@ namespace RestoreSnapshot
                     if (!this.IsRestorationMode)
                     {
                         this._db.RaidHeader.Status = "Backup";
+                        this.SaveHashesToDB();
                     }
                 }
             }
 
             return true;
+        }
+
+        private void SaveHashesToDB()
+        {
+            var fs = File.OpenWrite(this._db.FileName);
+            var storageCount = this._db.Storages.Length;
+            var dataBlocks = this._db.DataBlocks;
+            var dataBlockCount = dataBlocks.Length;
+            for (int i = 0; i < dataBlockCount; ++i)
+            {
+                var block = dataBlocks[i];
+                var record = this._arBuilderStatus[i];
+                for (int j = 0; j < storageCount; ++j)
+                {
+                    var filePartGrp = block.Items[j];
+                    var hashStr = record.arHashStr[j];
+
+                    byte[] hash = null;
+                    if (!string.IsNullOrEmpty(hashStr))
+                    {
+                        hashStr = hashStr.Trim();
+                        if (!string.IsNullOrEmpty(hashStr))
+                        {
+                            if (!hashStr.Equals("*", StringComparison.Ordinal))
+                            {
+                                hash = Convert.FromBase64String(hashStr);
+                            }
+                        }
+                    }
+
+                    fs.Position = filePartGrp.OffsetToDataHash;
+                    if (null == hash)
+                    {
+                        fs.WriteByte(0);
+                        fs.Position += 32;
+                    }
+                    else
+                    {
+                        fs.WriteByte(1);
+                        fs.Write(hash, 0, hash.Length);
+                    }
+                }
+            }
+            fs.Flush();
+            fs.Close();
+            fs.Dispose();
         }
 
         private bool IsFullBlock(int idx)
