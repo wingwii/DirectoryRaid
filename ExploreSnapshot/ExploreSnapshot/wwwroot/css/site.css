@@ -1,0 +1,33 @@
+﻿body {
+    font-family: monospace;
+    font-size: 15px;
+}
+
+.DirNode {
+    clear: both;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.DirName {
+    color: darkblue;
+}
+
+.FileName {
+    clear: both;
+    color: black;
+    cursor: pointer;
+}
+
+.DirNodeMargin {
+    float: left;
+    width: 12px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.DirNodeCnt {
+    float: left;
+    border-left: 1px solid lightgrey;
+    padding-left: 7px;
+}

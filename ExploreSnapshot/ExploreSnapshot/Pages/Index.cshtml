@@ -1,0 +1,21 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Browse DB File";
+}
+
+<script type="text/javascript" src="~/js/LocalFileBrowser.js" ></script>
+<div>
+    @foreach (var drive in Model.exportDrives)
+    {
+        <div class="DirNode" >
+            <div class="DirName" onclick="ExpandDir(this, '@Utils.WStr2Hex(drive.RootDirectory.FullName)')" >
+                <b>@drive.RootDirectory.FullName</b>
+            </div>
+            <div>
+                <div class="DirNodeMargin">&nbsp;</div>
+                <div class="DirNodeCnt"></div>
+            </div>
+        </div>
+    }
+</div>
