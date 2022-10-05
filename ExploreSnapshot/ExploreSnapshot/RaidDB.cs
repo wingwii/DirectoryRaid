@@ -205,8 +205,16 @@ namespace ExploreSnapshot
             {
                 var grp = this._dicFilePartsGroups[part.GroupID];
                 part.Group = grp;
-                grp.Parts.Add(part);
                 part.DataFile = (FileNode)this._dicNodes[part.FileID];
+
+                var partNum = part.PartNumber;
+                var partIdx = partNum - 1;
+                var lstParts = grp.Parts;
+                while (lstParts.Count <= partIdx)
+                {
+                    lstParts.Add(null);
+                }
+                lstParts[partIdx] = part;
             }
 
             this._arStorages = new StorageNode[storageCount];
@@ -216,7 +224,7 @@ namespace ExploreSnapshot
             }
 
             this._arDatBlocks = new DataBlock[this._dicDataBlocks.Count];
-            foreach(var kv in this._dicDataBlocks)
+            foreach (var kv in this._dicDataBlocks)
             {
                 var block = kv.Value;
                 this._arDatBlocks[block.BlockNumber - 1] = block;
@@ -251,6 +259,10 @@ namespace ExploreSnapshot
             public long ID = 0;
             public string NodeType = string.Empty;
             public long Size = 0;
+        }
+
+        public class NamedNode : Node
+        {
             public string Name = string.Empty;
 
             public override string ToString()
@@ -259,14 +271,14 @@ namespace ExploreSnapshot
             }
         }
 
-        public class StorageNode : Node
+        public class StorageNode : NamedNode
         {
             public int StorageNumber = 0;
             public string RelativePath = string.Empty;
             public Node RootDirectory = null;
         }
 
-        public class FileNode : Node
+        public class FileNode : NamedNode
         {
             public long StorageID = -1;
             public long ParentID = -1;
@@ -286,18 +298,15 @@ namespace ExploreSnapshot
             public override bool IsFile { get { return false; } }
         }
 
-        public class DataBlock
+        public class DataBlock : Node
         {
-            public long ID = 0;
             public int BlockNumber = 0;
-            public long Size = 0;
 
             public FilePartsGroup[] DGroups = null;
         }
 
-        public class FilePartsGroup
+        public class FilePartsGroup : Node
         {
-            public long ID = 0;
             public long OffsetToDataHash = 0;
             public byte[] DataHash = null;
 
@@ -310,14 +319,12 @@ namespace ExploreSnapshot
             public List<FilePart> Parts = new List<FilePart>();
         }
 
-        public class FilePart
+        public class FilePart : Node
         {
-            public long ID = 0;
             public long GroupID = -1;
             public long FileID = -1;
             public int PartNumber = 0;
             public long Offset = 0;
-            public long Size = 0;
 
             public FilePartsGroup Group = null;
             public FileNode DataFile = null;
