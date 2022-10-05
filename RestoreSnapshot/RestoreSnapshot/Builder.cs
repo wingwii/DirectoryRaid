@@ -9,12 +9,12 @@ namespace RestoreSnapshot
 {
     class Builder
     {
-        private RaidDB _db = null;
+        private DirectoryRaid.RaidDB _db = null;
         private int _workerCount = 0;
         private uint _dstStorageNumber = 0;
         private int _dstStorageIdx = -1;
         private Dictionary<int, int> _dicStorageNum2Idx = new Dictionary<int, int>();
-        private DirectoryRaid.StorageNode _dstStorage = null;
+        private DirectoryRaid.RaidDB.StorageNode _dstStorage = null;
         private string _dstStoragePath = string.Empty;
         private string[] _arActualStorageRootPaths = null;
         private bool[] _arActualStorageChecking = null;
@@ -26,12 +26,12 @@ namespace RestoreSnapshot
         private int _workerReport = 0;
 
 
-        public Builder(RaidDB db)
+        public Builder(DirectoryRaid.RaidDB db)
         {
             this._db = db;
         }
 
-        public bool IsRestorationMode { get; set; } = false;
+        public bool IsRestorationMode = false;
 
         public bool Build(uint storageNumber)
         {
@@ -58,7 +58,7 @@ namespace RestoreSnapshot
                 }
             }
 
-            this._builderStatusRecordLen = 16 + (48 * this._db.Storages.Length);
+            this._builderStatusRecordLen = 18 + (48 * this._db.Storages.Length);
 
             this.PrepareBuilderStatusFileName();
             this.PrepareWorkerThreads();
@@ -81,7 +81,7 @@ namespace RestoreSnapshot
                     {
                         this.WakeAllReaders(i);
                         this.WaitForAllReaders();
-                        this.ComputeCurrentRaidBlock();
+                        this.ComputeCurrentParityBlock();
                         this.SaveRaidBlock(dataBlocks[i]);
                         this.SaveBuilderStatus(i);
 
@@ -117,7 +117,7 @@ namespace RestoreSnapshot
                 var record = this._arBuilderStatus[i];
                 for (int j = 0; j < storageCount; ++j)
                 {
-                    var filePartGrp = block.Items[j];
+                    var filePartGrp = block.DGroups[j];
                     var hashStr = record.arHashStr[j];
 
                     byte[] hash = null;
@@ -174,7 +174,18 @@ namespace RestoreSnapshot
 
         private class BuilderStatusRecord
         {
+            public int status = 0;
             public string[] arHashStr = null;
+        }
+
+        private static byte[] CheckSumStorageBlock(byte[] buf)
+        {
+            byte[] result = null;
+            using (var hashFunc = SHA256.Create())
+            {
+                result = hashFunc.ComputeHash(buf);
+            }
+            return result;
         }
 
         private void LoadBuilderStatusFile()
@@ -212,7 +223,7 @@ namespace RestoreSnapshot
                 var arHashStr = new string[storageCount];
                 rec.arHashStr = arHashStr;
 
-                var s2 = s.Substring(14);
+                var s2 = s.Substring(16);
                 for (int j = 0; j < storageCount; ++j)
                 {
                     var hashStr = s2.Substring(4, 44).Trim();
@@ -228,16 +239,6 @@ namespace RestoreSnapshot
             }
             fs.Close();
             fs.Dispose();
-        }
-
-        private static byte[] CheckSumStorageBlock(byte[] buf)
-        {
-            byte[] result = null;
-            using (var hashFunc = SHA256.Create())
-            {
-                result = hashFunc.ComputeHash(buf);
-            }
-            return result;
         }
 
         private void SaveBuilderStatus(int idx)
@@ -263,6 +264,8 @@ namespace RestoreSnapshot
                 }
                 this._arBuilderStatus[idx] = bs;
             }
+            sb.Append('|');
+            sb.Append(bs.status.ToString());
 
             for (int i = 0; i < storageCount; ++i)
             {
@@ -293,7 +296,7 @@ namespace RestoreSnapshot
             var s = sb.ToString();
             var buf2 = Encoding.ASCII.GetBytes(s);
 
-            var fs = File.OpenWrite(this._builderStatusFileName);
+            var fs = File.Open(this._builderStatusFileName, FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read);
             fs.Position = idx * recordLen;
             fs.Write(buf2, 0, buf2.Length);
             fs.Flush();
@@ -325,11 +328,11 @@ namespace RestoreSnapshot
             }
         }
 
-        private void SaveRaidBlock(DirectoryRaid.RaidDataBlock block)
+        private void SaveRaidBlock(DirectoryRaid.RaidDB.DataBlock block)
         {
             var buf = this._arWorkerBuf[this._dstStorageIdx];
             var blockSize = buf.Length;
-            foreach (var grp in block.Items)
+            foreach (var grp in block.DGroups)
             {
                 if (this._dstStorage != grp.Storage)
                 {
@@ -337,7 +340,7 @@ namespace RestoreSnapshot
                 }
 
                 long offset = 0;
-                foreach (var part in grp.Items)
+                foreach (var part in grp.Parts)
                 {
                     var partSize = part.Size;
                     var fileName = this.PrepareActualFilePath(this._dstStorageIdx, part.DataFile);
@@ -367,7 +370,7 @@ namespace RestoreSnapshot
             }
         }
 
-        private void ComputeCurrentRaidBlock()
+        private void ComputeCurrentParityBlock()
         {
             var buf = this._arWorkerBuf[this._dstStorageIdx];
             var blockSize = buf.Length;
@@ -436,18 +439,6 @@ namespace RestoreSnapshot
             }
         }
 
-        private static DirectoryRaid.FilePartsGroup FindAssocFilePartGroup(DirectoryRaid.RaidDataBlock dataBlock, int storageNumber)
-        {
-            foreach (var grp in dataBlock.Items)
-            {
-                if (storageNumber == grp.Storage.StorageNumber)
-                {
-                    return grp;
-                }
-            }
-            return null;
-        }
-
         private static void ZeroBuf(byte[] buf, int offset, int size)
         {
             for (int i = 0; i < size; ++i)
@@ -456,10 +447,10 @@ namespace RestoreSnapshot
             }
         }
 
-        private string PrepareActualFilePath(int storageIdx, DirectoryRaid.FileNode file)
+        private string PrepareActualFilePath(int storageIdx, DirectoryRaid.RaidDB.FileNode file)
         {
-            var storage = file.Storage;
-            var rootDir = storage.RootDirectory as DirectoryRaid.FileNode;
+            var storage = file.Storage as DirectoryRaid.RaidDB.StorageNode;
+            var rootDir = storage.RootDirectory as DirectoryRaid.RaidDB.FileNode;
 
             var stack = new Stack<string>();
             var node = file;
@@ -471,7 +462,7 @@ namespace RestoreSnapshot
                 }
 
                 stack.Push(node.Name);
-                node = node.ParentNode as DirectoryRaid.FileNode;
+                node = node.Parent as DirectoryRaid.RaidDB.FileNode;
             }
 
             var path = this._arActualStorageRootPaths[storageIdx];
@@ -484,9 +475,21 @@ namespace RestoreSnapshot
             return path;
         }
 
-        private bool RunSrcReader(int readerIdx, int blockIdx)
+        private static DirectoryRaid.RaidDB.FilePartsGroup FindAssocFilePartGroup(DirectoryRaid.RaidDB.DataBlock dataBlock, int storageNumber)
         {
-            var storage = this._db.Storages[readerIdx];
+            foreach (var grp in dataBlock.DGroups)
+            {
+                if (storageNumber == grp.Storage.StorageNumber)
+                {
+                    return grp;
+                }
+            }
+            return null;
+        }
+
+        private bool RunSrcReader(int storageIdx, int blockIdx)
+        {
+            var storage = this._db.Storages[storageIdx];
             var dataBlock = this._db.DataBlocks[blockIdx];
             var filePartGrp = FindAssocFilePartGroup(dataBlock, storage.StorageNumber);
             if (null == filePartGrp)
@@ -495,13 +498,12 @@ namespace RestoreSnapshot
             }
 
             long offset = 0;
-            var buf = this._arWorkerBuf[readerIdx];
-            //ZeroBuf(buf, 0, buf.Length);
+            var buf = this._arWorkerBuf[storageIdx];
 
-            var fileParts = filePartGrp.Items;
+            var fileParts = filePartGrp.Parts;
             foreach (var part in fileParts)
             {
-                var fileName = this.PrepareActualFilePath(readerIdx, part.DataFile);
+                var fileName = this.PrepareActualFilePath(storageIdx, part.DataFile);
                 var partSize = part.Size;
 
                 FileStream fs = null;
@@ -597,8 +599,12 @@ namespace RestoreSnapshot
                 var path = GetStorageActualPath(storage);
                 this._arActualStorageRootPaths[i] = path;
 
-                var x = Directory.Exists(path);
-                this._arActualStorageChecking[i] = x;
+                var storageAlive = !string.IsNullOrEmpty(path);
+                if (storageAlive)
+                {
+                    storageAlive = Directory.Exists(path);
+                }
+                this._arActualStorageChecking[i] = storageAlive;
 
                 this._dicStorageNum2Idx[storage.StorageNumber] = i;
             }
@@ -633,7 +639,7 @@ namespace RestoreSnapshot
             return null;
         }
 
-        private static string GetStorageActualPath(DirectoryRaid.StorageNode storage)
+        private static string GetStorageActualPath(DirectoryRaid.RaidDB.StorageNode storage)
         {
             var label = storage.Name;
             var drives = DriveInfo.GetDrives();

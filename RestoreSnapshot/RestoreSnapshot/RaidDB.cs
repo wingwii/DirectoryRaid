@@ -3,20 +3,19 @@ using System.Collections.Generic;
 using System.Text;
 using System.IO;
 
-namespace RestoreSnapshot
+namespace DirectoryRaid
 {
-    class RaidDB
+    public class RaidDB
     {
-        private Dictionary<int, StorageNodeWrp> _dicStoragesByNum = new Dictionary<int, StorageNodeWrp>();
-        private Dictionary<long, StorageNodeWrp> _dicStorages = new Dictionary<long, StorageNodeWrp>();
-        private Dictionary<long, FileNodeWrp> _dicFiles = new Dictionary<long, FileNodeWrp>();
-        private Dictionary<long, DataBlockWrp> _dicDataBlocks = new Dictionary<long, DataBlockWrp>();
-        private Dictionary<long, FilePartsGroupWrp> _dicFilePartsGroups = new Dictionary<long, FilePartsGroupWrp>();
-        private Dictionary<long, FilePartWrp> _dicFileParts = new Dictionary<long, FilePartWrp>();
-        private long _maxDbObjID = -1;
+        private List<StorageNode> _lstStorages = new List<StorageNode>();
+        private Dictionary<int, StorageNode> _dicStoragesByNum = new Dictionary<int, StorageNode>();
+        private Dictionary<long, Node> _dicNodes = new Dictionary<long, Node>();
+        private Dictionary<long, DataBlock> _dicDataBlocks = new Dictionary<long, DataBlock>();
+        private Dictionary<long, FilePartsGroup> _dicFilePartsGroups = new Dictionary<long, FilePartsGroup>();
+        private List<FilePart> _lstFileParts = new List<FilePart>();
 
-        private DirectoryRaid.StorageNode[] _storages = null;
-        private DirectoryRaid.RaidDataBlock[] _dataBlocks = null;
+        private StorageNode[] _arStorages = null;
+        private DataBlock[] _arDatBlocks = null;
 
 
         public RaidDB()
@@ -24,32 +23,26 @@ namespace RestoreSnapshot
             //
         }
 
+        public StorageNode[] Storages { get { return this._arStorages; } }
+        public DataBlock[] DataBlocks { get { return this._arDatBlocks; } }
         public DirectoryRaid.Header RaidHeader { get; set; } = null;
         public string FileName { get; set; } = string.Empty;
-
-        public DirectoryRaid.StorageNode[] Storages
-        {
-            get { return this._storages; }
-        }
-
-        public DirectoryRaid.RaidDataBlock[] DataBlocks
-        {
-            get { return this._dataBlocks; }
-        }
 
         public bool Load()
         {
             var result = true;
+
             var fileName = this.FileName;
 
-            this._storages = null;
-            this._dataBlocks = null;
+            this._arStorages = null;
+            this._arDatBlocks = null;
 
-            this._dicStorages.Clear();
-            this._dicFiles.Clear();
+            this._lstStorages.Clear();
+            this._dicStoragesByNum.Clear();
+            this._dicNodes.Clear();
             this._dicDataBlocks.Clear();
             this._dicFilePartsGroups.Clear();
-            this._dicFileParts.Clear();
+            this._lstFileParts.Clear();
 
             long maxObjID = -1;
             var fs = File.OpenRead(fileName);
@@ -61,7 +54,7 @@ namespace RestoreSnapshot
                 maxObjID = (long)Math.Max(maxObjID, nodeID);
                 if (1 == nodeType)
                 {
-                    var storage = new DirectoryRaid.StorageNode();
+                    var storage = new StorageNode();
                     storage.NodeType = "S";
                     storage.ID = nodeID;
                     storage.StorageNumber = reader.ReadUInt16();
@@ -69,58 +62,50 @@ namespace RestoreSnapshot
                     storage.Name = ReadStringW(reader);
                     storage.RelativePath = ReadStringW(reader);
 
-                    var wrp = new StorageNodeWrp();
-                    wrp.target = storage;
-                    this._dicStorages[nodeID] = wrp;
-                    this._dicStoragesByNum[storage.StorageNumber] = wrp;
+                    this._lstStorages.Add(storage);
+                    this._dicNodes[nodeID] = storage;
+                    this._dicStoragesByNum[storage.StorageNumber] = storage;
                 }
                 else if (2 == nodeType || 3 == nodeType)
                 {
-                    var file = (DirectoryRaid.FileNode)null;
+                    var file = (FileNode)null;
                     if (2 == nodeType)
                     {
-                        file = new DirectoryRaid.DirectoryNode();
+                        file = new DirectoryNode();
                         file.NodeType = "D";
                     }
                     else
                     {
-                        file = new DirectoryRaid.FileNode();
+                        file = new FileNode();
                         file.NodeType = "F";
                     }
 
                     file.ID = nodeID;
-                    var parentNodeID = ReadID(reader);
-                    var storageID = ReadID(reader);
+                    file.ParentID = ReadID(reader);
+                    file.StorageID = ReadID(reader);
 
                     file.Size = reader.ReadInt64();
                     file.CreationTime = reader.ReadInt64();
                     file.LastWriteTime = reader.ReadInt64();
                     file.Name = ReadStringW(reader);
 
-                    var wrp = new FileNodeWrp();
-                    wrp.target = file;
-                    wrp.storageID = storageID;
-                    wrp.parentNodeID = parentNodeID;
-                    this._dicFiles[nodeID] = wrp;
+                    this._dicNodes[nodeID] = file;
                 }
                 else if (16 == nodeType)
                 {
-                    var block = new DirectoryRaid.RaidDataBlock();
+                    var block = new DataBlock();
                     block.ID = nodeID;
                     block.BlockNumber = reader.ReadInt32();
                     block.Size = (long)reader.ReadUInt32();
-
-                    var wrp = new DataBlockWrp();
-                    wrp.target = block;
-                    this._dicDataBlocks[nodeID] = wrp;
+                    this._dicDataBlocks[nodeID] = block;
                 }
                 else if (17 == nodeType)
                 {
-                    var grp = new DirectoryRaid.FilePartsGroup();
+                    var grp = new FilePartsGroup();
                     grp.ID = nodeID;
 
-                    var blockID = ReadID(reader);
-                    var storageNumber = (int)reader.ReadUInt16();
+                    grp.BlockID = ReadID(reader);
+                    grp.StorageNumber = (int)reader.ReadUInt16();
 
                     grp.OffsetToDataHash = fs.Position;
                     var hashExisted = reader.ReadByte();
@@ -130,28 +115,20 @@ namespace RestoreSnapshot
                         grp.DataHash = null;
                     }
 
-                    var wrp = new FilePartsGroupWrp();
-                    wrp.target = grp;
-                    wrp.blockID = blockID;
-                    wrp.storageNumber = storageNumber;
-                    this._dicFilePartsGroups[nodeID] = wrp;
+                    this._dicFilePartsGroups[nodeID] = grp;
                 }
                 else if (18 == nodeType)
                 {
-                    var part = new DirectoryRaid.FilePart();
+                    var part = new FilePart();
                     part.ID = nodeID;
 
-                    var groupID = ReadID(reader);
-                    var fileID = ReadID(reader);
+                    part.GroupID = ReadID(reader);
+                    part.FileID = ReadID(reader);
                     part.PartNumber = reader.ReadInt32();
                     part.Offset = (long)reader.ReadUInt32();
                     part.Size = (long)reader.ReadUInt32();
 
-                    var wrp = new FilePartWrp();
-                    wrp.target = part;
-                    wrp.groupID = groupID;
-                    wrp.fileID = fileID;
-                    this._dicFileParts[nodeID] = wrp;
+                    this._lstFileParts.Add(part);
                 }
                 else
                 {
@@ -162,17 +139,95 @@ namespace RestoreSnapshot
             reader.Close();
             fs.Close();
 
-            this._maxDbObjID = maxObjID + 1;
             if (result)
             {
-                result = false;
-                if (this.ResolveAssocObjects())
-                {
-                    result = this.ConvertResults();
-                }
+                this.LinkObjects();
             }
 
             return result;
+        }
+
+        private void LinkObjects()
+        {
+            foreach (var kv in this._dicNodes)
+            {
+                var node = kv.Value;
+                var file = node as FileNode;
+                if (file != null)
+                {
+                    Node parent = null;
+                    this._dicNodes.TryGetValue(file.ParentID, out parent);
+                    file.Parent = parent;
+
+                    {
+                        Node storage = null;
+                        this._dicNodes.TryGetValue(file.StorageID, out storage);
+                        file.Storage = storage;
+                    }
+                    {
+                        var parentDir = parent as DirectoryNode;
+                        if (parentDir != null)
+                        {
+                            parentDir.ChildNodes.Add(file);
+                        }
+                    }
+
+                    if (!file.IsFile)
+                    {
+                        var storage = parent as StorageNode;
+                        if (storage != null)
+                        {
+                            storage.RootDirectory = node;
+                        }
+                    }
+                }
+            }
+
+            var storageCount = this._lstStorages.Count;
+            foreach (var kv in this._dicFilePartsGroups)
+            {
+                var grp = kv.Value;
+                var storageNum = grp.StorageNumber;
+
+                var block = this._dicDataBlocks[grp.BlockID];
+                grp.DBlock = block;
+                grp.Storage = this._dicStoragesByNum[storageNum];
+
+                if (null == block.DGroups)
+                {
+                    block.DGroups = new FilePartsGroup[storageCount];
+                }
+                block.DGroups[storageNum - 1] = grp;
+            }
+
+            foreach (var part in this._lstFileParts)
+            {
+                var grp = this._dicFilePartsGroups[part.GroupID];
+                part.Group = grp;
+                part.DataFile = (FileNode)this._dicNodes[part.FileID];
+
+                var partNum = part.PartNumber;
+                var partIdx = partNum - 1;
+                var lstParts = grp.Parts;
+                while (lstParts.Count <= partIdx)
+                {
+                    lstParts.Add(null);
+                }
+                lstParts[partIdx] = part;
+            }
+
+            this._arStorages = new StorageNode[storageCount];
+            foreach (var storage in this._lstStorages)
+            {
+                this._arStorages[storage.StorageNumber - 1] = storage;
+            }
+
+            this._arDatBlocks = new DataBlock[this._dicDataBlocks.Count];
+            foreach (var kv in this._dicDataBlocks)
+            {
+                var block = kv.Value;
+                this._arDatBlocks[block.BlockNumber - 1] = block;
+            }
         }
 
         private long ReadID(BinaryReader reader)
@@ -198,122 +253,81 @@ namespace RestoreSnapshot
             return Encoding.Unicode.GetString(buf);
         }
 
-        private class StorageNodeWrp
+        public class Node
         {
-            public DirectoryRaid.StorageNode target = null;
+            public long ID = 0;
+            public string NodeType = string.Empty;
+            public long Size = 0;
         }
 
-        private class FileNodeWrp
+        public class NamedNode : Node
         {
-            public DirectoryRaid.FileNode target = null;
-            public long storageID = -1;
-            public long parentNodeID = -1;
-        }
+            public string Name = string.Empty;
 
-        private class DataBlockWrp
-        {
-            public DirectoryRaid.RaidDataBlock target = null;
-            public List<DirectoryRaid.FilePartsGroup> lstGrp = new List<DirectoryRaid.FilePartsGroup>();
-        }
-
-        private class FilePartsGroupWrp
-        {
-            public DirectoryRaid.FilePartsGroup target = null;
-            public List<DirectoryRaid.FilePart> lstPart = new List<DirectoryRaid.FilePart>();
-            public long blockID = -1;
-            public int storageNumber = -1;
-        }
-
-        private class FilePartWrp
-        {
-            public DirectoryRaid.FilePart target = null;
-            public long groupID = 0;
-            public long fileID = 0;
-        }
-
-        private bool ConvertResults()
-        {
-            int i = 0;
-            this._storages = new DirectoryRaid.StorageNode[this._dicStorages.Count];
-            foreach (var kv in this._dicStorages)
+            public override string ToString()
             {
-                this._storages[i++] = kv.Value.target;
+                return this.Name;
             }
-
-            return true;
         }
 
-        private bool ResolveAssocObjects()
+        public class StorageNode : NamedNode
         {
-            foreach (var kv in this._dicFiles)
-            {
-                var fileWrp = kv.Value;
-                var file = fileWrp.target;
-                var parentNodeID = fileWrp.parentNodeID;
-
-                {
-                    var storageWrp = this._dicStorages[fileWrp.storageID];
-                    file.Storage = storageWrp.target;
-                }
-
-                FileNodeWrp parentDirWrp = null;
-                if (this._dicFiles.TryGetValue(parentNodeID, out parentDirWrp))
-                {
-                    var parentDir = parentDirWrp.target as DirectoryRaid.DirectoryNode;
-                    file.ParentNode = parentDir;
-                    parentDir.Files.Add(file);
-                }
-                else
-                {
-                    StorageNodeWrp storageWrp = null;
-                    if (this._dicStorages.TryGetValue(parentNodeID, out storageWrp))
-                    {
-                        var storage = storageWrp.target;
-                        storage.RootDirectory = file;
-                    }
-                }
-
-            }
-
-            foreach (var kv in this._dicFileParts)
-            {
-                var filePartWrp = kv.Value;
-                var part = filePartWrp.target;
-
-                var fileWrp = this._dicFiles[filePartWrp.fileID];
-                part.DataFile = fileWrp.target;
-
-                var grpWrp = this._dicFilePartsGroups[filePartWrp.groupID];
-                grpWrp.lstPart.Add(part);
-            }
-
-            foreach (var kv in this._dicFilePartsGroups)
-            {
-                var grpWrp = kv.Value;
-                var grp = grpWrp.target;
-                grp.Storage = this._dicStoragesByNum[grpWrp.storageNumber].target;
-                grp.Items = grpWrp.lstPart.ToArray();
-
-                var blckWrp = this._dicDataBlocks[grpWrp.blockID];
-                blckWrp.lstGrp.Add(grp);
-            }
-
-            int i = 0;
-            this._dataBlocks = new DirectoryRaid.RaidDataBlock[this._dicDataBlocks.Count];
-            foreach (var kv in this._dicDataBlocks)
-            {
-                var blckWrp = kv.Value;
-                var blck = blckWrp.target;
-                var lstGrp = blckWrp.lstGrp;
-
-                blck.Items = lstGrp.ToArray();
-                this._dataBlocks[i++] = blck;
-            }
-
-            return true;
+            public int StorageNumber = 0;
+            public string RelativePath = string.Empty;
+            public Node RootDirectory = null;
         }
 
+        public class FileNode : NamedNode
+        {
+            public long StorageID = -1;
+            public long ParentID = -1;
 
+            public Node Storage = null;
+            public Node Parent = null;
+
+            public long CreationTime = 0;
+            public long LastWriteTime = 0;
+
+            public virtual bool IsFile { get { return true; } }
+        }
+
+        public class DirectoryNode : FileNode
+        {
+            public List<FileNode> ChildNodes = new List<FileNode>();
+            public override bool IsFile { get { return false; } }
+        }
+
+        public class DataBlock : Node
+        {
+            public int BlockNumber = 0;
+
+            public FilePartsGroup[] DGroups = null;
+        }
+
+        public class FilePartsGroup : Node
+        {
+            public long OffsetToDataHash = 0;
+            public byte[] DataHash = null;
+
+            public long BlockID = -1;
+            public int StorageNumber = 0;
+
+            public DataBlock DBlock = null;
+            public StorageNode Storage = null;
+
+            public List<FilePart> Parts = new List<FilePart>();
+        }
+
+        public class FilePart : Node
+        {
+            public long GroupID = -1;
+            public long FileID = -1;
+            public int PartNumber = 0;
+            public long Offset = 0;
+
+            public FilePartsGroup Group = null;
+            public FileNode DataFile = null;
+        }
         //
     }
 }

@@ -7,21 +7,22 @@ namespace RestoreSnapshot
     class Program
     {
         private static DirectoryRaid.Header _Header = null;
-        private static RaidDB _DB = null;
+        private static DirectoryRaid.RaidDB _DB = null;
 
         static void Main(string[] args)
         {
-            if (args.Length < 2)
+            var argc = args.Length;
+            if (argc < 2)
             {
-                Console.WriteLine("restore <mode> <HeaderFile>");
+                Console.WriteLine("restore <HeaderFile> <mode>");
                 Console.WriteLine("  Modes:");
                 Console.WriteLine("    Build");
-                Console.WriteLine("    Restore-<StorageNumber>");
+                Console.WriteLine("    Restore <StorageNumber>");
                 return;
             }
 
-            var mode = args[0];
-            var hdrFileName = args[1];
+            var hdrFileName = args[0];
+            var mode = args[1];
 
             var hdrData = File.ReadAllText(hdrFileName);
             _Header = JsonConvert.DeserializeObject<DirectoryRaid.Header>(hdrData);
@@ -29,7 +30,7 @@ namespace RestoreSnapshot
             var fi = new FileInfo(hdrFileName);
             var cwd = fi.Directory.FullName;
 
-            _DB = new RaidDB();
+            _DB = new DirectoryRaid.RaidDB();
             _DB.RaidHeader = _Header;
             _DB.FileName = Path.Combine(cwd, "blocks.db");
             _DB.Load();
@@ -51,16 +52,21 @@ namespace RestoreSnapshot
                     File.WriteAllText(hdrFileName, hdrData);
                 }
             }
-            else if (mode.IndexOf("restore-", 0, StringComparison.OrdinalIgnoreCase) == 0)
+            else if (mode.Equals("restore", StringComparison.OrdinalIgnoreCase))
             {
+                if (argc < 3)
+                {
+                    Console.WriteLine("StorageNumber is required.");
+                    return;
+                }
+
                 if (!_Header.Status.Equals("Backup", StringComparison.OrdinalIgnoreCase))
                 {
                     Console.WriteLine("Snapshot is incompleted.");
                     return;
                 }
 
-                var s = mode.Substring(8);
-                var storageNum = uint.Parse(s);
+                var storageNum = uint.Parse(args[2]);
                 var builder = new Builder(_DB);
                 builder.IsRestorationMode = true;
                 builder.Build(storageNum);
