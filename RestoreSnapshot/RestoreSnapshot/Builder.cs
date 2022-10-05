@@ -62,6 +62,8 @@ namespace RestoreSnapshot
 
             this.PrepareBuilderStatusFileName();
             this.PrepareWorkerThreads();
+
+            this.InitBuilderStatus();
             this.LoadBuilderStatusFile();
 
             if (this._workerCount > 1)
@@ -79,16 +81,30 @@ namespace RestoreSnapshot
                     }
                     else
                     {
-                        this.WakeAllReaders(i);
-                        this.WaitForAllReaders();
-                        this.ComputeCurrentParityBlock();
-                        this.SaveRaidBlock(dataBlocks[i]);
-                        this.SaveBuilderStatus(i);
-
-                        if (this.IsFullBlock(i))
+                        // Mark as "dirty"
+                        var saveOK = this.SaveBuilderStatus(i, 1);
+                        if (saveOK)
                         {
-                            ++nFullBlock;
+                            this.WakeAllReaders(i);
+                            this.WaitForAllReaders();
+                            this.ComputeCurrentParityBlock();
+                            this.UpdateBuilderStatus(i);
+
+                            int status = 2; // partially completed
+                            var isFullBlck = this.IsFullBlock(i);
+                            if (isFullBlck)
+                            {
+                                ++nFullBlock;
+                                status = 3; // fully backed up
+                            }
+
+                            saveOK = this.SaveRaidBlock(dataBlocks[i]);
+                            if (saveOK)
+                            {
+                                this.SaveBuilderStatus(i, status);
+                            }
                         }
+                        //
                     }
                 }
 
@@ -188,24 +204,60 @@ namespace RestoreSnapshot
             return result;
         }
 
-        private void LoadBuilderStatusFile()
+        private void InitBuilderStatus()
         {
+            var storageCount = this._db.Storages.Length;
             var n = this._db.DataBlocks.Length;
             this._arBuilderStatus = new BuilderStatusRecord[n];
             for (int i = 0; i < n; ++i)
             {
-                this._arBuilderStatus[i] = null;
-            }
+                var bs = new BuilderStatusRecord();
+                this._arBuilderStatus[i] = bs;
 
+                var arHashStr = new string[storageCount];
+                bs.arHashStr = arHashStr;
+                bs.status = 0;
+
+                for (int j = 0; j < storageCount; ++j)
+                {
+                    arHashStr[j] = null;
+                }
+            }
+        }
+
+        private void UpdateBuilderStatus(int idx)
+        {
+            var bs = this._arBuilderStatus[idx];
+            var arHashStr = bs.arHashStr;
+
+            var storageCount = this._db.Storages.Length;
+            for (int i = 0; i < storageCount; ++i)
+            {
+                string hashStr = arHashStr[i];
+                if (null == hashStr || i == this._dstStorageIdx)
+                {
+                    var storageAlive = this._arActualStorageChecking[i];
+                    if (storageAlive)
+                    {
+                        var hash = CheckSumStorageBlock(this._arWorkerBuf[i]);
+                        hashStr = Convert.ToBase64String(hash);
+                    }
+                }
+                bs.arHashStr[i] = hashStr;
+            }
+        }
+
+        private void LoadBuilderStatusFile()
+        {
             if (!File.Exists(this._builderStatusFileName))
             {
                 return;
             }
 
             int recIdx = 0;
+            var storageCount = this._db.Storages.Length;
             var recLen = this._builderStatusRecordLen;
             var buf = new byte[recLen];
-            var storageCount = this._db.Storages.Length;
             var fs = File.OpenRead(this._builderStatusFileName);
             while (fs.Position < fs.Length)
             {
@@ -216,32 +268,48 @@ namespace RestoreSnapshot
                 }
 
                 var s = Encoding.ASCII.GetString(buf);
+                var s2 = s.Substring(0, 8);
+                recIdx = int.Parse(s2, System.Globalization.NumberStyles.HexNumber);
 
-                var rec = new BuilderStatusRecord();
-                this._arBuilderStatus[recIdx] = rec;
+                var bs = this._arBuilderStatus[recIdx];
+                var arHashStr = bs.arHashStr;
 
-                var arHashStr = new string[storageCount];
-                rec.arHashStr = arHashStr;
+                s2 = s.Substring(15, 1);
+                var status = int.Parse(s2);
+                bs.status = status;
 
-                var s2 = s.Substring(16);
+                s2 = s.Substring(16);
                 for (int j = 0; j < storageCount; ++j)
                 {
                     var hashStr = s2.Substring(4, 44).Trim();
                     s2 = s2.Substring(48);
-                    if (hashStr.Equals("*", StringComparison.Ordinal))
+
+                    if (status < 2)
                     {
                         hashStr = null;
                     }
+                    else
+                    {
+                        if (string.IsNullOrEmpty(hashStr))
+                        {
+                            hashStr = null;
+                        }
+                        else
+                        {
+                            if (hashStr.Equals("*", StringComparison.Ordinal))
+                            {
+                                hashStr = null;
+                            }
+                        }
+                    }
                     arHashStr[j] = hashStr;
                 }
-
-                ++recIdx;
             }
             fs.Close();
             fs.Dispose();
         }
 
-        private void SaveBuilderStatus(int idx)
+        private bool SaveBuilderStatus(int idx, int newStatus)
         {
             var storageCount = this._arWorkerBuf.Length;
             long recordLen = this._builderStatusRecordLen;
@@ -254,54 +322,49 @@ namespace RestoreSnapshot
             sb.Append(this._dstStorageIdx.ToString().PadRight(2, ' '));
 
             var bs = this._arBuilderStatus[idx];
-            if (null == bs)
+            var status = bs.status;
+            if (newStatus >= 0)
             {
-                bs = new BuilderStatusRecord();
-                bs.arHashStr = new string[storageCount];
-                for (int i = 0; i < storageCount; ++i)
-                {
-                    bs.arHashStr[i] = null;
-                }
-                this._arBuilderStatus[idx] = bs;
+                status = newStatus;
             }
+
             sb.Append('|');
-            sb.Append(bs.status.ToString());
+            sb.Append(status.ToString());
 
             for (int i = 0; i < storageCount; ++i)
             {
                 sb.Append("\r\n  ");
-                string hashStr = null;
-                if (bs != null)
+                var hashStr = bs.arHashStr[i];
+                if (null == hashStr)
                 {
-                    hashStr = bs.arHashStr[i];
-                }
-                if (null == hashStr || i == this._dstStorageIdx)
-                {
-                    var x = this._arActualStorageChecking[i];
-                    if (x)
-                    {
-                        var hash = CheckSumStorageBlock(this._arWorkerBuf[i]);
-                        hashStr = Convert.ToBase64String(hash);
-                    }
-                    else
-                    {
-                        hashStr = "*";
-                    }
+                    hashStr = "*";
                 }
                 sb.Append(hashStr.PadRight(44, ' '));
-                bs.arHashStr[i] = hashStr;
             }
             sb.Append("\r\n");
 
             var s = sb.ToString();
             var buf2 = Encoding.ASCII.GetBytes(s);
 
-            var fs = File.Open(this._builderStatusFileName, FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read);
-            fs.Position = idx * recordLen;
-            fs.Write(buf2, 0, buf2.Length);
-            fs.Flush();
-            fs.Close();
-            fs.Dispose();
+            var result = false;
+            FileStream fs = null;
+            try
+            {
+                fs = File.Open(this._builderStatusFileName, FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read);
+                fs.Position = idx * recordLen;
+                fs.Write(buf2, 0, buf2.Length);
+                fs.Flush();
+                result = true;
+            }
+            catch (Exception) { }
+            if (fs != null)
+            {
+                try { fs.Close(); }
+                catch (Exception) { }
+                try { fs.Dispose(); }
+                catch (Exception) { }
+            }
+            return result;
         }
 
         private static void PrepareDir(string fileName)
@@ -328,8 +391,9 @@ namespace RestoreSnapshot
             }
         }
 
-        private void SaveRaidBlock(DirectoryRaid.RaidDB.DataBlock block)
+        private bool SaveRaidBlock(DirectoryRaid.RaidDB.DataBlock block)
         {
+            var result = true;
             var buf = this._arWorkerBuf[this._dstStorageIdx];
             var blockSize = buf.Length;
             foreach (var grp in block.DGroups)
@@ -355,10 +419,12 @@ namespace RestoreSnapshot
                         fs = File.OpenWrite(fileName);
                         fs.Position = part.Offset;
                         fs.Write(buf, (int)offset, (int)partSize);
+                        fs.Flush();
                     }
-                    catch (Exception) { }
-                    try { fs.Flush(); }
-                    catch (Exception) { }
+                    catch (Exception)
+                    {
+                        result = false;
+                    }
                     try { fs.Close(); }
                     catch (Exception) { }
                     try { fs.Dispose(); }
@@ -368,6 +434,7 @@ namespace RestoreSnapshot
                 }
                 break;
             }
+            return result;
         }
 
         private void ComputeCurrentParityBlock()
@@ -410,20 +477,33 @@ namespace RestoreSnapshot
                 var buf = this._arWorkerBuf[i];
                 ZeroBuf(buf, 0, buf.Length);
 
-                if (i != this._dstStorageIdx)
+                var workerActivated = this._arActualStorageChecking[i];
+                if (workerActivated)
                 {
-                    var workerActivated = this._arActualStorageChecking[i];
-                    if (workerActivated)
+                    var workerRejected = false;
+                    var bs = this._arBuilderStatus[blockIdx];
+                    var status = bs.status;
+                    if (i != this._dstStorageIdx)
                     {
-                        var bs = this._arBuilderStatus[blockIdx];
-                        if (bs != null)
+                        if (status >= 2)
                         {
                             if (!string.IsNullOrEmpty(bs.arHashStr[i]))
                             {
-                                --this._workerReport;
-                                continue;
+                                workerRejected = true;
                             }
                         }
+                    }
+                    else
+                    {
+                        if (status < 2)
+                        {
+                            workerRejected = true;
+                        }
+                    }
+                    if (workerRejected)
+                    {
+                        --this._workerReport;
+                        continue;
                     }
                 }
 
