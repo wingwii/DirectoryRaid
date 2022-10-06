@@ -24,6 +24,7 @@ namespace RestoreSnapshot
         private int[] _arWorkerReaderBlockIdx = null;
         private byte[][] _arWorkerBuf = null;
         private int _workerReport = 0;
+        private Dictionary<long, DirectoryRaid.RaidDB.DataBlock> _dicTargetSelectedBlocks = null;
 
 
         public Builder(DirectoryRaid.RaidDB db)
@@ -32,32 +33,13 @@ namespace RestoreSnapshot
         }
 
         public bool IsRestorationMode = false;
-        public string TargetFile = null;
+        public string TargetID = null;
 
 
         public bool Build(uint storageNumber)
         {
             var actualStorageNumber = storageNumber;
-            if (!string.IsNullOrEmpty(this.TargetFile))
-            {
-                var s = this.TargetFile;
-                if (s.StartsWith("S", StringComparison.OrdinalIgnoreCase))
-                {
-                    //
-                }
-                else
-                {
-                    var fileID = long.Parse(s, System.Globalization.NumberStyles.HexNumber);
-                    var file = this._db.FindFileByID(fileID);
-                    if (null == file)
-                    {
-                        return false;
-                    }
-
-                    actualStorageNumber = (uint)(file.Storage as DirectoryRaid.RaidDB.StorageNode).StorageNumber;
-                    this.ApplyRaidBlockWhiteList(file);
-                }
-            }
+            this.PreprocessSpecialTarget(ref actualStorageNumber);
 
             this._dstStorageNumber = actualStorageNumber;
             this._dstStorageIdx = this.FindStorageIndex(actualStorageNumber);
@@ -98,6 +80,15 @@ namespace RestoreSnapshot
                 for (int i = 0; i < n; ++i)
                 {
                     Console.Title = "Building " + i.ToString() + " of " + n.ToString();
+
+                    if (this._dicTargetSelectedBlocks !=null)
+                    {
+                        var currentBlock = dataBlocks[i];
+                        if (!this._dicTargetSelectedBlocks.ContainsKey(currentBlock.ID))
+                        {
+                            continue;
+                        }
+                    }
 
                     var bs = this._arBuilderStatus[i];
                     var status = bs.status;
@@ -152,18 +143,29 @@ namespace RestoreSnapshot
             return true;
         }
 
-        private void ClearBuilderStatusHashes(BuilderStatusRecord bs)
+        private bool PreprocessSpecialTarget(ref uint storageNumber)
         {
-            var ar1 = bs.arHashStr;
-            var n = ar1.Length;
-            for (int i = 0; i < n; ++i)
+            this._dicTargetSelectedBlocks = null;
+
+            var s = this.TargetID;
+            if (!string.IsNullOrEmpty(s))
             {
-                ar1[i] = null;
+                var fileID = long.Parse(s, System.Globalization.NumberStyles.HexNumber);
+                var file = this._db.FindFileByID(fileID);
+                if (null != file)
+                {
+                    storageNumber = (uint)(file.Storage as DirectoryRaid.RaidDB.StorageNode).StorageNumber;
+                    this.ApplyRaidBlockWhiteList(file);
+                    return true;
+                }
             }
+
+            return false;
         }
 
         private void ApplyRaidBlockWhiteList(DirectoryRaid.RaidDB.FileNode file)
         {
+            this._dicTargetSelectedBlocks = new Dictionary<long, DirectoryRaid.RaidDB.DataBlock>();
             foreach (var blck in this._db.DataBlocks)
             {
                 foreach (var grp in blck.DGroups)
@@ -174,6 +176,7 @@ namespace RestoreSnapshot
                         if (part.DataFile == file)
                         {
                             found = true;
+                            this._dicTargetSelectedBlocks[blck.ID] = blck;
                             break;
                         }
                     }
@@ -182,6 +185,16 @@ namespace RestoreSnapshot
                         break;
                     }
                 }
+            }
+        }
+
+        private void ClearBuilderStatusHashes(BuilderStatusRecord bs)
+        {
+            var ar1 = bs.arHashStr;
+            var n = ar1.Length;
+            for (int i = 0; i < n; ++i)
+            {
+                ar1[i] = null;
             }
         }
 
@@ -329,6 +342,11 @@ namespace RestoreSnapshot
                 if (nRead < recLen)
                 {
                     break;
+                }
+
+                if (0 == buf[0])
+                {
+                    continue;
                 }
 
                 var s = Encoding.ASCII.GetString(buf);

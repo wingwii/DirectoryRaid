@@ -71,11 +71,11 @@ namespace RestoreSnapshot
                 builder.IsRestorationMode = true;
                 builder.Build(storageNum);
             }
-            else if (mode.Equals("file", StringComparison.OrdinalIgnoreCase))
+            else if (mode.Equals("id", StringComparison.OrdinalIgnoreCase))
             {
                 if (argc < 3)
                 {
-                    Console.WriteLine("Target file is required.");
+                    Console.WriteLine("Target ID is required.");
                     return;
                 }
 
@@ -86,7 +86,7 @@ namespace RestoreSnapshot
 
                 var builder = new Builder(_DB);
                 builder.IsRestorationMode = true;
-                builder.TargetFile = args[2];
+                builder.TargetID = args[2];
                 builder.Build(0);
             }
 
