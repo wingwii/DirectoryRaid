@@ -32,11 +32,35 @@ namespace RestoreSnapshot
         }
 
         public bool IsRestorationMode = false;
+        public string TargetFile = null;
+
 
         public bool Build(uint storageNumber)
         {
-            this._dstStorageNumber = storageNumber;
-            this._dstStorageIdx = this.FindStorageIndex(storageNumber);
+            var actualStorageNumber = storageNumber;
+            if (!string.IsNullOrEmpty(this.TargetFile))
+            {
+                var s = this.TargetFile;
+                if (s.StartsWith("S", StringComparison.OrdinalIgnoreCase))
+                {
+                    //
+                }
+                else
+                {
+                    var fileID = long.Parse(s, System.Globalization.NumberStyles.HexNumber);
+                    var file = this._db.FindFileByID(fileID);
+                    if (null == file)
+                    {
+                        return false;
+                    }
+
+                    actualStorageNumber = (uint)(file.Storage as DirectoryRaid.RaidDB.StorageNode).StorageNumber;
+                    this.ApplyRaidBlockWhiteList(file);
+                }
+            }
+
+            this._dstStorageNumber = actualStorageNumber;
+            this._dstStorageIdx = this.FindStorageIndex(actualStorageNumber);
             if (this._dstStorageIdx < 0)
             {
                 return false;
@@ -75,7 +99,14 @@ namespace RestoreSnapshot
                 {
                     Console.Title = "Building " + i.ToString() + " of " + n.ToString();
 
-                    if (this.IsFullBlock(i))
+                    var bs = this._arBuilderStatus[i];
+                    var status = bs.status;
+                    if (status < 2)
+                    {
+                        ClearBuilderStatusHashes(bs);
+                    }
+
+                    if (status >= 2 && this.IsFullBlock(i))
                     {
                         ++nFullBlock;
                     }
@@ -90,7 +121,7 @@ namespace RestoreSnapshot
                             this.ComputeCurrentParityBlock();
                             this.UpdateBuilderStatus(i);
 
-                            int status = 2; // partially completed
+                            status = 2; // partially completed
                             var isFullBlck = this.IsFullBlock(i);
                             if (isFullBlck)
                             {
@@ -119,6 +150,39 @@ namespace RestoreSnapshot
             }
 
             return true;
+        }
+
+        private void ClearBuilderStatusHashes(BuilderStatusRecord bs)
+        {
+            var ar1 = bs.arHashStr;
+            var n = ar1.Length;
+            for (int i = 0; i < n; ++i)
+            {
+                ar1[i] = null;
+            }
+        }
+
+        private void ApplyRaidBlockWhiteList(DirectoryRaid.RaidDB.FileNode file)
+        {
+            foreach (var blck in this._db.DataBlocks)
+            {
+                foreach (var grp in blck.DGroups)
+                {
+                    var found = false;
+                    foreach (var part in grp.Parts)
+                    {
+                        if (part.DataFile == file)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found)
+                    {
+                        break;
+                    }
+                }
+            }
         }
 
         private void SaveHashesToDB()
@@ -274,11 +338,11 @@ namespace RestoreSnapshot
                 var bs = this._arBuilderStatus[recIdx];
                 var arHashStr = bs.arHashStr;
 
-                s2 = s.Substring(15, 1);
+                s2 = s.Substring(s.Length - 3, 1);
                 var status = int.Parse(s2);
                 bs.status = status;
 
-                s2 = s.Substring(16);
+                s2 = s.Substring(11);
                 for (int j = 0; j < storageCount; ++j)
                 {
                     var hashStr = s2.Substring(4, 44).Trim();
@@ -317,8 +381,6 @@ namespace RestoreSnapshot
             var sb = new StringBuilder();
             sb.Append(string.Format("{0:X8}", idx));
             sb.Append('|');
-            sb.Append(storageCount.ToString().PadRight(2, ' '));
-            sb.Append('|');
             sb.Append(this._dstStorageIdx.ToString().PadRight(2, ' '));
 
             var bs = this._arBuilderStatus[idx];
@@ -327,9 +389,6 @@ namespace RestoreSnapshot
             {
                 status = newStatus;
             }
-
-            sb.Append('|');
-            sb.Append(status.ToString());
 
             for (int i = 0; i < storageCount; ++i)
             {
@@ -341,6 +400,9 @@ namespace RestoreSnapshot
                 }
                 sb.Append(hashStr.PadRight(44, ' '));
             }
+
+            sb.Append("\r\n #");
+            sb.Append(status.ToString());
             sb.Append("\r\n");
 
             var s = sb.ToString();

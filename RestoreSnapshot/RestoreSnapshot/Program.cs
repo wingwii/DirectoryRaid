@@ -17,7 +17,8 @@ namespace RestoreSnapshot
                 Console.WriteLine("restore <HeaderFile> <mode>");
                 Console.WriteLine("  Modes:");
                 Console.WriteLine("    Build");
-                Console.WriteLine("    Restore <StorageNumber>");
+                Console.WriteLine("    Storage <StorageNumber>");
+                Console.WriteLine("    File [S<StorageNumber>:]<FileID|FilePath>");
                 return;
             }
 
@@ -52,7 +53,7 @@ namespace RestoreSnapshot
                     File.WriteAllText(hdrFileName, hdrData);
                 }
             }
-            else if (mode.Equals("restore", StringComparison.OrdinalIgnoreCase))
+            else if (mode.Equals("storage", StringComparison.OrdinalIgnoreCase))
             {
                 if (argc < 3)
                 {
@@ -60,9 +61,8 @@ namespace RestoreSnapshot
                     return;
                 }
 
-                if (!_Header.Status.Equals("Backup", StringComparison.OrdinalIgnoreCase))
+                if (!CheckRaidReady())
                 {
-                    Console.WriteLine("Snapshot is incompleted.");
                     return;
                 }
 
@@ -71,10 +71,41 @@ namespace RestoreSnapshot
                 builder.IsRestorationMode = true;
                 builder.Build(storageNum);
             }
+            else if (mode.Equals("file", StringComparison.OrdinalIgnoreCase))
+            {
+                if (argc < 3)
+                {
+                    Console.WriteLine("Target file is required.");
+                    return;
+                }
+
+                if (!CheckRaidReady())
+                {
+                    return;
+                }
+
+                var builder = new Builder(_DB);
+                builder.IsRestorationMode = true;
+                builder.TargetFile = args[2];
+                builder.Build(0);
+            }
 
 #if DEBUG
             //Console.ReadKey();
 #endif
+        }
+
+        private static bool CheckRaidReady()
+        {
+            if (!_Header.Status.Equals("Backup", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Snapshot is incompleted.");
+                return false;
+            }
+            else
+            {
+                return true;
+            }
         }
 
     }

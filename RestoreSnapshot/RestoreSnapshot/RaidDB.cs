@@ -28,6 +28,20 @@ namespace DirectoryRaid
         public DirectoryRaid.Header RaidHeader { get; set; } = null;
         public string FileName { get; set; } = string.Empty;
 
+        
+        public FileNode FindFileByID(long nodeID)
+        {
+            Node node = null;
+            if (this._dicNodes.TryGetValue(nodeID, out node))
+            {
+                return node as FileNode;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
         public bool Load()
         {
             var result = true;
