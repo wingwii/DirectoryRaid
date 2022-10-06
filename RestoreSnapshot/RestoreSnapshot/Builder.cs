@@ -32,6 +32,8 @@ namespace RestoreSnapshot
             this._db = db;
         }
 
+
+        public bool EnableAutoRefreshContent = false;
         public bool IsRestorationMode = false;
         public string TargetID = null;
 
@@ -657,6 +659,8 @@ namespace RestoreSnapshot
                 return false;
             }
 
+            var enableWriteMode = (!this.IsRestorationMode && this.EnableAutoRefreshContent);
+
             long offset = 0;
             var buf = this._arWorkerBuf[storageIdx];
 
@@ -669,7 +673,14 @@ namespace RestoreSnapshot
                 FileStream fs = null;
                 try
                 {
-                    fs = File.OpenRead(fileName);
+                    if (enableWriteMode)
+                    {
+                        fs = File.Open(fileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+                    }
+                    else
+                    {
+                        fs = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    }
                     fs.Position = part.Offset;
 
                     long actualSize = 0;
@@ -682,6 +693,9 @@ namespace RestoreSnapshot
                         }
                         actualSize += nRead;
                     }
+
+                    fs.Position = part.Offset;
+                    //fs.Write(buf, 0, (int)partSize);
                 }
                 catch (Exception) { }
                 if (fs != null)

@@ -16,7 +16,7 @@ namespace RestoreSnapshot
             {
                 Console.WriteLine("restore <HeaderFile> <mode>");
                 Console.WriteLine("  Modes:");
-                Console.WriteLine("    Build");
+                Console.WriteLine("    Parity [AutoRefreshContent:0|1]");
                 Console.WriteLine("    Storage <StorageNumber>");
                 Console.WriteLine("    File [S<StorageNumber>:]<FileID|FilePath>");
                 return;
@@ -36,7 +36,7 @@ namespace RestoreSnapshot
             _DB.FileName = Path.Combine(cwd, "blocks.db");
             _DB.Load();
 
-            if (mode.Equals("build", StringComparison.OrdinalIgnoreCase))
+            if (mode.Equals("parity", StringComparison.OrdinalIgnoreCase))
             {
                 if (_Header.Status.Equals("Commited", StringComparison.OrdinalIgnoreCase))
                 {
@@ -45,6 +45,11 @@ namespace RestoreSnapshot
                 }
 
                 var builder = new Builder(_DB);
+                if (argc > 2)
+                {
+                    //builder.EnableAutoRefreshContent = (!args[2].Equals("0", StringComparison.Ordinal));
+                }
+
                 builder.Build(_Header.NumberOfPartitions + 1);
 
                 if (!_Header.Status.Equals("Commited", StringComparison.OrdinalIgnoreCase))
