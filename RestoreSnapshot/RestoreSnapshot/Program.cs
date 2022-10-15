@@ -16,9 +16,9 @@ namespace RestoreSnapshot
             {
                 Console.WriteLine("restore <HeaderFile> <mode>");
                 Console.WriteLine("  Modes:");
-                Console.WriteLine("    Parity [AutoRefreshContent:0|1]");
+                Console.WriteLine("    Parity");
                 Console.WriteLine("    Storage <StorageNumber>");
-                Console.WriteLine("    File [S<StorageNumber>:]<FileID|FilePath>");
+                Console.WriteLine("    ID <FileID> [OutputFile]");
                 return;
             }
 
@@ -45,11 +45,6 @@ namespace RestoreSnapshot
                 }
 
                 var builder = new Builder(_DB);
-                if (argc > 2)
-                {
-                    //builder.EnableAutoRefreshContent = (!args[2].Equals("0", StringComparison.Ordinal));
-                }
-
                 builder.Build(_Header.NumberOfPartitions + 1);
 
                 if (!_Header.Status.Equals("Commited", StringComparison.OrdinalIgnoreCase))
@@ -92,6 +87,12 @@ namespace RestoreSnapshot
                 var builder = new Builder(_DB);
                 builder.IsRestorationMode = true;
                 builder.TargetID = args[2];
+
+                if (argc > 3)
+                {
+                    builder.OutputSingleFileName = args[3];
+                }
+
                 builder.Build(0);
             }
 

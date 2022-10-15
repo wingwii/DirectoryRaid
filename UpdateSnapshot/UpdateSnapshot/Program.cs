@@ -216,6 +216,8 @@ namespace UpdateSnapshot
 
         private static void ScanDir(RaidDir currentDir, string path)
         {
+            Console.WriteLine(path);
+
             string[] fileList = null;
             try
             {

@@ -33,9 +33,11 @@ namespace RestoreSnapshot
         }
 
 
-        public bool EnableAutoRefreshContent = false;
         public bool IsRestorationMode = false;
         public string TargetID = null;
+        public string OutputSingleFileName = string.Empty;
+
+        private long _targetSingleFileID = 0;
 
 
         public bool Build(uint storageNumber)
@@ -83,7 +85,7 @@ namespace RestoreSnapshot
                 {
                     Console.Title = "Building " + i.ToString() + " of " + n.ToString();
 
-                    if (this._dicTargetSelectedBlocks !=null)
+                    if (this._dicTargetSelectedBlocks != null)
                     {
                         var currentBlock = dataBlocks[i];
                         if (!this._dicTargetSelectedBlocks.ContainsKey(currentBlock.ID))
@@ -158,6 +160,7 @@ namespace RestoreSnapshot
                 {
                     storageNumber = (uint)(file.Storage as DirectoryRaid.RaidDB.StorageNode).StorageNumber;
                     this.ApplyRaidBlockWhiteList(file);
+                    this._targetSingleFileID = fileID;
                     return true;
                 }
             }
@@ -395,6 +398,11 @@ namespace RestoreSnapshot
 
         private bool SaveBuilderStatus(int idx, int newStatus)
         {
+            if (this.TargetID != null)
+            {
+                return true;
+            }
+
             var storageCount = this._arWorkerBuf.Length;
             long recordLen = this._builderStatusRecordLen;
 
@@ -476,6 +484,8 @@ namespace RestoreSnapshot
         private bool SaveRaidBlock(DirectoryRaid.RaidDB.DataBlock block)
         {
             var result = true;
+            var isSpecialTarget = (this.TargetID != null);
+            var isSingleFileOutput = !string.IsNullOrEmpty(this.OutputSingleFileName);
             var buf = this._arWorkerBuf[this._dstStorageIdx];
             var blockSize = buf.Length;
             foreach (var grp in block.DGroups)
@@ -489,7 +499,24 @@ namespace RestoreSnapshot
                 foreach (var part in grp.Parts)
                 {
                     var partSize = part.Size;
-                    var fileName = this.PrepareActualFilePath(this._dstStorageIdx, part.DataFile);
+                    if (isSpecialTarget)
+                    {
+                        if (part.DataFile.ID != this._targetSingleFileID)
+                        {
+                            offset += partSize;
+                            continue;
+                        }
+                    }
+
+                    var fileName = string.Empty;
+                    if (isSpecialTarget && isSingleFileOutput)
+                    {
+                        fileName = this.OutputSingleFileName;
+                    }
+                    else
+                    {
+                        fileName = this.PrepareActualFilePath(this._dstStorageIdx, part.DataFile);
+                    }
 
                     var s = "[" + part.Offset.ToString("X") + "] " + fileName;
                     Console.WriteLine(s);
@@ -659,8 +686,6 @@ namespace RestoreSnapshot
                 return false;
             }
 
-            var enableWriteMode = (!this.IsRestorationMode && this.EnableAutoRefreshContent);
-
             long offset = 0;
             var buf = this._arWorkerBuf[storageIdx];
 
@@ -673,14 +698,7 @@ namespace RestoreSnapshot
                 FileStream fs = null;
                 try
                 {
-                    if (enableWriteMode)
-                    {
-                        fs = File.Open(fileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
-                    }
-                    else
-                    {
-                        fs = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    }
+                    fs = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
                     fs.Position = part.Offset;
 
                     long actualSize = 0;
@@ -693,9 +711,6 @@ namespace RestoreSnapshot
                         }
                         actualSize += nRead;
                     }
-
-                    fs.Position = part.Offset;
-                    //fs.Write(buf, 0, (int)partSize);
                 }
                 catch (Exception) { }
                 if (fs != null)

@@ -2,7 +2,7 @@
   "profiles": {
     "RestoreSnapshot": {
       "commandName": "Project",
-      "commandLineArgs": "\"D:\\Tmp\\DirRaid\\R5\\23141aea\\meta\\header.json\" parity 1"
+      "commandLineArgs": "\"D:\\Tmp\\DirRaid\\R5\\23141aea\\meta\\header.json\" id 5f z:\\001.jpg"
     }
   }
 }
