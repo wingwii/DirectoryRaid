@@ -90,7 +90,7 @@ namespace RestoreSnapshot
 
                 if (argc > 3)
                 {
-                    builder.OutputSingleFileName = args[3];
+                    builder.TargetOutputFileName = args[3];
                 }
 
                 builder.Build(0);

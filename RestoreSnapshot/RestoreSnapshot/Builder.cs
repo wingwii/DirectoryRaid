@@ -35,7 +35,7 @@ namespace RestoreSnapshot
 
         public bool IsRestorationMode = false;
         public string TargetID = null;
-        public string OutputSingleFileName = string.Empty;
+        public string TargetOutputFileName = string.Empty;
 
         private long _targetSingleFileID = 0;
 
@@ -58,8 +58,12 @@ namespace RestoreSnapshot
             this._dstStoragePath = this._arActualStorageRootPaths[this._dstStorageIdx];
             if (string.IsNullOrEmpty(this._dstStoragePath))
             {
-                return false;
+                if (!(this.IsRestorationMode && !string.IsNullOrEmpty(this.TargetOutputFileName)))
+                {
+                    return false;
+                }
             }
+
             if (!this.IsRestorationMode)
             {
                 if (!this._arActualStorageChecking[this._dstStorageIdx])
@@ -485,7 +489,7 @@ namespace RestoreSnapshot
         {
             var result = true;
             var isSpecialTarget = (this.TargetID != null);
-            var isSingleFileOutput = !string.IsNullOrEmpty(this.OutputSingleFileName);
+            var isSingleFileOutput = !string.IsNullOrEmpty(this.TargetOutputFileName);
             var buf = this._arWorkerBuf[this._dstStorageIdx];
             var blockSize = buf.Length;
             foreach (var grp in block.DGroups)
@@ -511,7 +515,7 @@ namespace RestoreSnapshot
                     var fileName = string.Empty;
                     if (isSpecialTarget && isSingleFileOutput)
                     {
-                        fileName = this.OutputSingleFileName;
+                        fileName = this.TargetOutputFileName;
                     }
                     else
                     {
@@ -568,6 +572,11 @@ namespace RestoreSnapshot
             var fileName = this._dstStoragePath;
             if (this.IsRestorationMode)
             {
+                if (!string.IsNullOrEmpty(this.TargetOutputFileName))
+                {
+                    return;
+                }
+
                 var di = new DirectoryInfo(fileName);
                 fileName = di.Parent.FullName;
             }
