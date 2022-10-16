@@ -18,7 +18,7 @@ namespace RestoreSnapshot
                 Console.WriteLine("  Modes:");
                 Console.WriteLine("    Parity");
                 Console.WriteLine("    Storage <StorageNumber>");
-                Console.WriteLine("    ID <FileID> [OutputFile]");
+                Console.WriteLine("    FileID <ID> [OutputFile]");
                 return;
             }
 
@@ -71,7 +71,7 @@ namespace RestoreSnapshot
                 builder.IsRestorationMode = true;
                 builder.Build(storageNum);
             }
-            else if (mode.Equals("id", StringComparison.OrdinalIgnoreCase))
+            else if (mode.Equals("fileid", StringComparison.OrdinalIgnoreCase))
             {
                 if (argc < 3)
                 {

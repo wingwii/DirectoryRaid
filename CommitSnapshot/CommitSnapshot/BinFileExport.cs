@@ -86,8 +86,8 @@ namespace CommitSnapshot
                             this.WriteID(group.ID);
                             this.WriteID(part.DataFile.ID);
                             writer.Write((UInt32)part.PartNumber);
-                            writer.Write((UInt32)part.Offset);
                             writer.Write((UInt32)part.Size);
+                            writer.Write((UInt64)part.Offset);
                         }
                     }
                 }

@@ -139,8 +139,8 @@ namespace DirectoryRaid
                     part.GroupID = ReadID(reader);
                     part.FileID = ReadID(reader);
                     part.PartNumber = reader.ReadInt32();
-                    part.Offset = (long)reader.ReadUInt32();
                     part.Size = (long)reader.ReadUInt32();
+                    part.Offset = (long)reader.ReadUInt64();
 
                     this._lstFileParts.Add(part);
                 }
